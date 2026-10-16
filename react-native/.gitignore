@@ -1,0 +1,4 @@
+# Copied from ../ios and ../android by scripts/sync-native.mjs
+ios/vendor/
+android/src/main/java/io/helpium/sdk/
+android/src/main/res/

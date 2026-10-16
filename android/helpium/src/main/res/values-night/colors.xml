@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="helpium_background">#111827</color>
+    <color name="helpium_surface">#1F2937</color>
+    <color name="helpium_text">#F9FAFB</color>
+    <color name="helpium_text_secondary">#9CA3AF</color>
+    <color name="helpium_divider">#374151</color>
+</resources>

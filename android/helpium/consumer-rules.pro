@@ -1,0 +1,2 @@
+-keep class io.helpium.sdk.Helpium { public *; }
+-keep class io.helpium.sdk.Helpium$* { *; }

@@ -1,0 +1,19 @@
+.DS_Store
+# Swift
+.build/
+.swiftpm/
+*.xcuserstate
+xcuserdata/
+DerivedData/
+# Android
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+# JS
+node_modules/
+# Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
