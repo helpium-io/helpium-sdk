@@ -154,3 +154,7 @@ if (Helpium.isHelpiumPush(response.notification.request.content.data)) {
 | React Native | `cd react-native && npm run sync-native`, which copies the native sources into the package |
 
 Every SDK implements `spec/API.md`. When the Helpium customer API changes, update the spec and the fixtures first.
+
+---
+
+Created with love by Helpium ❤️
