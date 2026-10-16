@@ -88,8 +88,10 @@ public enum Helpium {
     }
 
     /// The chat as a SwiftUI view, to push or embed instead of `present()`.
+    /// Safe to build before `configure`: SwiftUI creates navigation destinations
+    /// ahead of time, and the chat only looks for its configuration when shown.
     public static func chatView() -> some View {
-        HelpiumChatView(store: requireStore(), onClose: nil)
+        EmbeddedChat()
     }
 
     // MARK: - Unread
@@ -145,6 +147,30 @@ public enum Helpium {
         return true
     }
 
+    // MARK: - Demo
+
+    /// Opens the chat with a sample conversation, for screenshots and design
+    /// review in the example app. Not part of the public API.
+    @_spi(Demo)
+    public static func presentDemo(typing: Bool = false) {
+        guard let store else { return }
+        let time = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-600))
+        let messages = [
+            #"{"id":900001,"sender_type":"customer","content":"Hi! My order #1042 hasn't arrived yet","created_at":"\#(time)"}"#,
+            #"{"id":900002,"sender_type":"bot","content":"Sorry about that! I checked **order #1042**: it left our warehouse yesterday and arrives tomorrow.","created_at":"\#(time)"}"#,
+            #"{"id":900003,"sender_type":"bot","content":"You can follow it here: [tracking link](https://example.com/track)","created_at":"\#(time)","should_handoff":true}"#,
+            #"{"id":900004,"sender_type":"customer","content":"Great, thanks!","created_at":"\#(time)"}"#,
+            #"{"id":900005,"sender_type":"customer","content":"Can I change the delivery address?","created_at":"\#(time)"}"#,
+            #"{"id":900006,"sender_type":"user","sender_name":"Ana","content":"Hi! I'm Ana from the support team. Sure, what's the new address?","created_at":"\#(time)"}"#,
+        ]
+        messages.forEach { store.handle(event: "App\\Events\\NewMessage", data: Data($0.utf8)) }
+        if typing {
+            store.handle(event: "App\\Events\\BotTyping", data: Data(#"{"conversation_id":1,"is_typing":true}"#.utf8))
+        }
+        store.screen = .thread
+        present()
+    }
+
     // MARK: - Helpers
 
     private static func requireStore() -> ChatStore {
@@ -164,6 +190,19 @@ public enum Helpium {
         var top = scene?.windows.first { $0.isKeyWindow }?.rootViewController
         while let next = top?.presentedViewController { top = next }
         return top
+    }
+}
+
+/// The chat for `Helpium.chatView()`, resolved when it appears.
+struct EmbeddedChat: View {
+    var body: some View {
+        if let store = Helpium.store {
+            HelpiumChatView(store: store, onClose: nil)
+        } else {
+            Text("Call Helpium.configure(widgetKey:) before showing the chat.")
+                .multilineTextAlignment(.center)
+                .padding()
+        }
     }
 }
 

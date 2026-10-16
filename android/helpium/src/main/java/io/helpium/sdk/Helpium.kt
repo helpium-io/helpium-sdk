@@ -26,6 +26,7 @@ object Helpium {
     internal var store: ChatStore? = null
         private set
     private var appearance = HelpiumAppearance()
+    private var httpClient: okhttp3.OkHttpClient? = null
     private val unreadListeners = linkedSetOf<UnreadCountListener>()
     private val main = Handler(Looper.getMainLooper())
 
@@ -33,7 +34,7 @@ object Helpium {
     @JvmStatic
     @JvmOverloads
     fun configure(context: Context, widgetKey: String, baseUrl: String = "https://helpium.io") {
-        val store = ChatStore(context, Api(baseUrl, widgetKey))
+        val store = ChatStore(context, Api(baseUrl, widgetKey, httpClient ?: Api.defaultClient))
         store.explicitLocale = Strings.forcedLocale
         store.appearance = appearance
         store.onUnreadCountChange = { count -> unreadListeners.toList().forEach { it.onUnreadCountChanged(count) } }
@@ -69,6 +70,16 @@ object Helpium {
     fun setLocale(code: String?) {
         Strings.forcedLocale = code
         store?.explicitLocale = code
+    }
+
+    /**
+     * Advanced: the OkHttp client the SDK uses for the API, the realtime
+     * socket and images. Use it for a corporate proxy, certificate pinning or
+     * a local test server. Call before `configure`.
+     */
+    @JvmStatic
+    fun setHttpClient(client: okhttp3.OkHttpClient) {
+        httpClient = client
     }
 
     /**

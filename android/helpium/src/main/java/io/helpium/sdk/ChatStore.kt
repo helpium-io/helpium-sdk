@@ -18,7 +18,7 @@ import java.util.concurrent.Executors
  * replicate". Lives on the main thread; network calls run on a worker.
  */
 internal class ChatStore(context: Context, val api: Api) {
-    enum class Screen { LOADING, HOME, THREAD, UNAVAILABLE, FAILED }
+    enum class Screen { LOADING, THREAD, UNAVAILABLE, FAILED }
 
     private val appContext = context.applicationContext
     private val main = Handler(Looper.getMainLooper())
@@ -83,7 +83,9 @@ internal class ChatStore(context: Context, val api: Api) {
         get() {
             val s = settings ?: return false
             if (s.humanHandoffMode == "disabled" || handoffRequested || isClosed) return false
-            return messages.lastOrNull { it.role == Role.BOT }?.shouldHandoff == true
+            // Right under the bot answer that suggested it, not after anything newer.
+            val last = messages.lastOrNull { it.role != Role.SYSTEM } ?: return false
+            return last.role == Role.BOT && last.shouldHandoff
         }
 
     fun addListener(listener: () -> Unit) { listeners += listener }
@@ -122,7 +124,7 @@ internal class ChatStore(context: Context, val api: Api) {
                 this.settings = settings
                 connectSocket(settings)
                 if (token != null) resume(token, conversation)
-                screen = if (hasConversation || showRating) Screen.THREAD else Screen.HOME
+                screen = Screen.THREAD
                 changed()
             }
         }
@@ -226,7 +228,7 @@ internal class ChatStore(context: Context, val api: Api) {
         forgetConversationLocally()
         identity = Identity()
         customerIdentified = false
-        screen = if (settings == null) Screen.LOADING else Screen.HOME
+        screen = if (settings == null) Screen.LOADING else Screen.THREAD
         changed()
     }
 
@@ -248,12 +250,6 @@ internal class ChatStore(context: Context, val api: Api) {
     fun openThread() {
         screen = Screen.THREAD
         markAllSeen()
-        changed()
-    }
-
-    fun goHome() {
-        if (isClosed && !showRating) forgetConversation()
-        screen = Screen.HOME
         changed()
     }
 
@@ -379,14 +375,14 @@ internal class ChatStore(context: Context, val api: Api) {
         val token = token ?: return
         background({ api.rate(token, rating, comment) }) {
             forgetConversation()
-            screen = Screen.HOME
+            screen = Screen.THREAD
             changed()
         }
     }
 
     fun skipRating() {
         forgetConversation()
-        screen = Screen.HOME
+        screen = Screen.THREAD
         changed()
     }
 

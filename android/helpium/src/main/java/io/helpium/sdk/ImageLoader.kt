@@ -24,7 +24,7 @@ internal object ImageLoader {
         into.setImageDrawable(null)
         pool.execute {
             val bitmap = runCatching {
-                Api.defaultClient.newCall(Request.Builder().url(url).build()).execute().use { response ->
+                (Helpium.store?.api?.http ?: Api.defaultClient).newCall(Request.Builder().url(url).build()).execute().use { response ->
                     response.body?.bytes()?.let { decode(it, maxSize) }
                 }
             }.getOrNull() ?: return@execute

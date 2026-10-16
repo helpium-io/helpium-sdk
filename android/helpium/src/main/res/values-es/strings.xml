@@ -1,13 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="helpium_title">Soporte</string>
-    <string name="helpium_welcome_title">Hola 👋</string>
-    <string name="helpium_welcome_subtitle">Preguntanos lo que necesites. Solemos responder en pocos minutos.</string>
-    <string name="helpium_new_conversation">Envianos un mensaje</string>
-    <string name="helpium_continue_conversation">Continuar la conversación</string>
-    <string name="helpium_placeholder">Escribe un mensaje...</string>
+    <string name="helpium_welcome_title">¿Cómo podemos ayudarte?</string>
+    <string name="helpium_welcome_subtitle">Escribe tu pregunta y buscaremos artículos relevantes o te conectaremos con soporte.</string>
+    <string name="helpium_placeholder">Escribe tu mensaje...</string>
     <string name="helpium_talk_to_human">Hablar con una persona</string>
-    <string name="helpium_waiting_for_agent">Esperando a un agente</string>
+    <string name="helpium_waiting_for_agent">Esperando agente</string>
     <string name="helpium_chatting_with">Chateando con %1$s</string>
     <string name="helpium_offline">Ahora no estamos disponibles. Déjanos un mensaje y te responderemos.</string>
     <string name="helpium_close_conversation">Terminar conversación</string>
@@ -45,6 +43,12 @@
     <string name="helpium_loading_failed">No se pudo cargar el chat. Revisa tu conexión.</string>
     <string name="helpium_typing">Escribiendo...</string>
     <string name="helpium_close">Cerrar</string>
-    <string name="helpium_back">Volver</string>
     <string name="helpium_more">Más opciones</string>
+    <string name="helpium_reply_time">Normalmente respondemos en pocos minutos</string>
+    <string name="helpium_you">Tú</string>
+    <string name="helpium_just_now">Ahora</string>
+    <string name="helpium_ai">IA</string>
+    <string name="helpium_greeting">¡Hola! ¿En qué puedo ayudarte hoy?</string>
+    <string name="helpium_welcome_subtitle_team">Envíanos un mensaje y nuestro equipo te responderá pronto.</string>
+    <string name="helpium_instant_answers">Respuestas instantáneas</string>
 </resources>

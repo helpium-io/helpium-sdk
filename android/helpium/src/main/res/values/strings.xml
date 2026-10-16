@@ -1,13 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="helpium_title">Support</string>
-    <string name="helpium_welcome_title">Hi there 👋</string>
-    <string name="helpium_welcome_subtitle">Ask us anything. We usually answer in a few minutes.</string>
-    <string name="helpium_new_conversation">Send us a message</string>
-    <string name="helpium_continue_conversation">Continue your conversation</string>
-    <string name="helpium_placeholder">Write a message...</string>
+    <string name="helpium_welcome_title">How can we help?</string>
+    <string name="helpium_welcome_subtitle">Type your question below and we\'ll find relevant articles or connect you with support.</string>
+    <string name="helpium_placeholder">Type your message...</string>
     <string name="helpium_talk_to_human">Talk to a human</string>
-    <string name="helpium_waiting_for_agent">Waiting for an agent</string>
+    <string name="helpium_waiting_for_agent">Waiting for agent</string>
     <string name="helpium_chatting_with">Chatting with %1$s</string>
     <string name="helpium_offline">We are away right now. Leave a message and we will get back to you.</string>
     <string name="helpium_close_conversation">End conversation</string>
@@ -45,6 +43,12 @@
     <string name="helpium_loading_failed">The chat could not load. Check your connection.</string>
     <string name="helpium_typing">Typing...</string>
     <string name="helpium_close">Close</string>
-    <string name="helpium_back">Back</string>
     <string name="helpium_more">More options</string>
+    <string name="helpium_reply_time">We typically reply within a few minutes</string>
+    <string name="helpium_you">You</string>
+    <string name="helpium_just_now">Just now</string>
+    <string name="helpium_ai">AI</string>
+    <string name="helpium_greeting">Hi! How can I help you today?</string>
+    <string name="helpium_welcome_subtitle_team">Send us a message and our team will get back to you shortly.</string>
+    <string name="helpium_instant_answers">Instant answers</string>
 </resources>

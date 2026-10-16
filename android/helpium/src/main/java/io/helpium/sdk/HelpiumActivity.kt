@@ -1,19 +1,24 @@
 package io.helpium.sdk
 
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.text.Editable
 import android.text.InputType
+import android.text.TextUtils
 import android.text.TextWatcher
 import android.text.method.LinkMovementMethod
 import android.text.util.Linkify
@@ -21,9 +26,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.view.inputmethod.EditorInfo
 import android.widget.BaseAdapter
-import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -35,16 +38,22 @@ import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import java.io.ByteArrayOutputStream
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 
 /** The chat: home, thread, pre-chat form and rating. Built in code so the SDK needs no androidx. */
 class HelpiumActivity : Activity() {
     private lateinit var store: ChatStore
-    private lateinit var content: FrameLayout
-    private lateinit var titleView: TextView
-    private lateinit var backButton: ImageButton
-    private lateinit var moreButton: ImageButton
+    private lateinit var root: FrameLayout
+    private var palette: Palette? = null
+    private var shown: ChatStore.Screen? = null
     private var thread: ThreadUi? = null
     private val listener: () -> Unit = { render() }
+
+    private val p get() = palette!!
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(Strings.localized(newBase))
@@ -63,17 +72,8 @@ class HelpiumActivity : Activity() {
             return
         }
         store = current
-
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        palette = resolvePalette()
-        bar = topBar()
-        root.addView(bar)
-        headerDivider = divider()
-        root.addView(headerDivider)
-        content = FrameLayout(this)
-        root.addView(content, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        root = FrameLayout(this)
         setContentView(root)
-
         store.addListener(listener)
         store.start()
         render()
@@ -96,177 +96,98 @@ class HelpiumActivity : Activity() {
 
     @Deprecated("Activity API kept for minSdk 21")
     override fun onBackPressed() {
-        if (store.screen == ChatStore.Screen.THREAD) store.goHome() else super.onBackPressed()
+        super.onBackPressed()
     }
 
-    // region Chrome
-
-    private lateinit var palette: Palette
-    private lateinit var bar: LinearLayout
-    private lateinit var headerDivider: View
-    private lateinit var closeButton: ImageButton
-
-    private val accent get() = palette.primary
-    private val onAccent get() = palette.onPrimary
+    // region Rendering
 
     private fun resolvePalette(): Palette {
         val dark = when (store.appearance.colorScheme) {
             HelpiumColorScheme.LIGHT -> false
             HelpiumColorScheme.DARK -> true
-            HelpiumColorScheme.SYSTEM -> (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+            HelpiumColorScheme.SYSTEM -> (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         }
         return Palette.resolve(store.appearance, store.settings?.primaryColor, dark)
     }
 
-    /** Window, status bar and top bar in the header colors. */
-    @Suppress("DEPRECATION")
-    private fun applyChrome() {
-        window.decorView.setBackgroundColor(palette.background)
-        window.statusBarColor = palette.headerBackground
-        if (android.os.Build.VERSION.SDK_INT >= 23) {
-            val flags = window.decorView.systemUiVisibility
-            window.decorView.systemUiVisibility = if (palette.headerIsDark) {
-                flags and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
-            } else {
-                flags or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
-            }
-        }
-        bar.setBackgroundColor(palette.headerBackground)
-        headerDivider.setBackgroundColor(palette.border)
-        titleView.setTextColor(palette.headerText)
-        listOf(backButton, moreButton, closeButton).forEach { it.imageTintList = ColorStateList.valueOf(palette.headerText) }
-    }
-
-    private fun topBar(): LinearLayout {
-        val bar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(4), dp(4), dp(4), dp(4))
-        }
-        backButton = iconButton(android.R.drawable.ic_media_previous, R.string.helpium_back) { store.goHome() }
-        backButton.setImageResource(R.drawable.helpium_ic_back)
-        titleView = TextView(this).apply {
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
-            typeface = Typeface.DEFAULT_BOLD
-            setPadding(dp(8), 0, dp(8), 0)
-            maxLines = 1
-        }
-        moreButton = iconButton(R.drawable.helpium_ic_more, R.string.helpium_more) { confirmClose() }
-        closeButton = iconButton(R.drawable.helpium_ic_close, R.string.helpium_close) { finish() }
-        bar.addView(backButton)
-        bar.addView(titleView, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        bar.addView(moreButton)
-        bar.addView(closeButton)
-        return bar
-    }
-
     private fun render() {
         val fresh = resolvePalette()
-        if (fresh != palette) {
-            // New colors: rebuild every view with them.
-            palette = fresh
-            thread = null
-            content.removeAllViews()
-        }
-        applyChrome()
-
         val screen = store.screen
-        backButton.visibility = if (screen == ChatStore.Screen.THREAD) View.VISIBLE else View.GONE
-        moreButton.visibility = if (screen == ChatStore.Screen.THREAD && store.hasConversation && !store.isClosed) View.VISIBLE else View.GONE
-        titleView.text = when {
-            screen != ChatStore.Screen.THREAD -> getString(R.string.helpium_title)
-            store.agent != null -> getString(R.string.helpium_chatting_with, store.agent!!.name)
-            store.handoffRequested && !store.isClosed -> getString(R.string.helpium_waiting_for_agent)
-            else -> store.settings?.botName ?: getString(R.string.helpium_title)
-        }
+        val rebuild = fresh != palette || screen != shown || screen != ChatStore.Screen.THREAD
+        palette = fresh
 
         store.notice?.let {
             store.notice = null
             AlertDialog.Builder(this).setMessage(it).setPositiveButton(android.R.string.ok, null).show()
         }
 
-        if (screen == ChatStore.Screen.THREAD) {
-            val ui = thread ?: ThreadUi().also { thread = it; content.removeAllViews(); content.addView(it.root) }
-            ui.render()
+        if (!rebuild) {
+            thread?.render()
             return
         }
 
+        shown = screen
         thread = null
-        content.removeAllViews()
-        content.addView(when (screen) {
-            ChatStore.Screen.LOADING -> centered(ProgressBar(this))
-            ChatStore.Screen.FAILED -> centered(LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER_HORIZONTAL
-                addView(secondaryText(getString(R.string.helpium_loading_failed)))
-                addView(textButton(getString(R.string.helpium_retry)) { store.reload() })
-            })
-            ChatStore.Screen.UNAVAILABLE -> centered(secondaryText(getString(R.string.helpium_offline)))
-            else -> home()
-        })
+        root.removeAllViews()
+        root.setBackgroundColor(p.background)
+        window.decorView.setBackgroundColor(p.background)
+
+        when (screen) {
+            ChatStore.Screen.THREAD -> {
+                statusBar(p.headerBackground)
+                thread = ThreadUi().also { root.addView(it.root); it.render() }
+            }
+            ChatStore.Screen.LOADING -> {
+                statusBar(p.headerBackground)
+                root.addView(simpleScreen(ProgressBar(this).apply { indeterminateTintList = ColorStateList.valueOf(p.textSecondary) }))
+            }
+            ChatStore.Screen.FAILED -> {
+                statusBar(p.headerBackground)
+                root.addView(simpleScreen(LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.CENTER_HORIZONTAL
+                    addView(text(getString(R.string.helpium_loading_failed), 15f, p.textSecondary).apply { gravity = Gravity.CENTER })
+                    addView(pill(getString(R.string.helpium_retry), filled = true) { store.reload() }, wrap().apply { topMargin = dp(16) })
+                }))
+            }
+            ChatStore.Screen.UNAVAILABLE -> {
+                statusBar(p.headerBackground)
+                root.addView(simpleScreen(text(getString(R.string.helpium_offline), 15f, p.textSecondary).apply { gravity = Gravity.CENTER }))
+            }
+        }
     }
 
-    private fun home(): View {
-        val settings = store.settings
-        val column = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(24), dp(20), dp(24))
+    @Suppress("DEPRECATION")
+    private fun statusBar(color: Int) {
+        window.statusBarColor = color
+        if (Build.VERSION.SDK_INT >= 23) {
+            val flags = window.decorView.systemUiVisibility
+            val light = Palette.contrasting(color) == Color.BLACK
+            window.decorView.systemUiVisibility = if (light) flags or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR else flags and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
         }
-        column.addView(TextView(this).apply {
-            text = getString(R.string.helpium_welcome_title)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 28f)
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(palette.text)
-        })
-        column.addView(secondaryText(getString(R.string.helpium_welcome_subtitle)).apply { setPadding(0, dp(6), 0, 0) })
-        if (settings?.isOnline == false) {
-            column.addView(secondaryText(settings.offlineMessage ?: getString(R.string.helpium_offline)).apply { setPadding(0, dp(8), 0, 0) })
-        }
+    }
 
-        val label = getString(if (store.hasConversation) R.string.helpium_continue_conversation else R.string.helpium_new_conversation)
-        val start = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+    private fun simpleScreen(content: View): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        addView(LinearLayout(this@HelpiumActivity).apply {
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(18), 0, dp(18), 0)
-            background = RippleDrawable(ColorStateList.valueOf(0x33000000), rounded(palette.primary, dp(14).toFloat()), null)
-            isClickable = true
-            setOnClickListener { if (store.hasConversation) store.openThread() else store.startNewConversation() }
-            addView(TextView(this@HelpiumActivity).apply {
-                text = label
-                typeface = Typeface.DEFAULT_BOLD
-                setTextColor(palette.onPrimary)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            if (store.unreadCount > 0) {
-                addView(TextView(this@HelpiumActivity).apply {
-                    text = store.unreadCount.toString()
-                    typeface = Typeface.DEFAULT_BOLD
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                    setTextColor(palette.unreadBadgeText)
-                    setPadding(dp(7), dp(2), dp(7), dp(2))
-                    background = rounded(palette.unreadBadge, dp(10).toFloat())
-                })
-            }
-        }
-        column.addView(start, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)).apply { topMargin = dp(24) })
-
-        if (!store.hasConversation) {
-            settings?.instantAnswers?.forEach { answer ->
-                column.addView(outlinedRow(answer.label) {
-                    if (answer.isShortcut && store.needsPrechat) store.startNewConversation() else store.sendInstantAnswer(answer)
-                }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(10) })
-            }
-        }
-        return ScrollView(this).apply { addView(column) }
+            setPadding(dp(16), dp(8), dp(10), dp(8))
+            setBackgroundColor(p.headerBackground)
+            addView(text(getString(R.string.helpium_title), 17f, p.headerText, bold = true), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(closeButton(p.headerText))
+        })
+        addView(FrameLayout(this@HelpiumActivity).apply {
+            setPadding(dp(32), dp(32), dp(32), dp(32))
+            addView(content, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
     }
 
-    private fun confirmClose() {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.helpium_close_confirm_title)
-            .setMessage(R.string.helpium_close_confirm_message)
-            .setPositiveButton(R.string.helpium_end) { _, _ -> store.close() }
-            .setNegativeButton(R.string.helpium_cancel, null)
-            .show()
+    // endregion
+
+    private fun senderName(message: ChatMessage): String = when (message.role) {
+        Role.CUSTOMER -> getString(R.string.helpium_you)
+        Role.AGENT -> message.senderName ?: getString(R.string.helpium_title)
+        else -> store.settings?.botName ?: getString(R.string.helpium_title)
     }
 
     // endregion
@@ -275,30 +196,95 @@ class HelpiumActivity : Activity() {
 
     private inner class ThreadUi {
         val root = LinearLayout(this@HelpiumActivity).apply { orientation = LinearLayout.VERTICAL }
+        private val headerName = text("", 15f, p.headerText, bold = true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+        private val headerStatus = text("", 12f, withAlpha(p.headerText, 0.65f)).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+        private val headerAvatar = FrameLayout(this@HelpiumActivity)
+        private val headerLines = LinearLayout(this@HelpiumActivity)
+
+        /** The small line goes above the main one while greeting, below it in a conversation. */
+        private fun swapHeaderLines(statusFirst: Boolean) {
+            val first = headerLines.getChildAt(0)
+            if ((statusFirst && first === headerStatus) || (!statusFirst && first === headerName)) return
+            headerLines.removeAllViews()
+            if (statusFirst) { headerLines.addView(headerStatus); headerLines.addView(headerName) } else { headerLines.addView(headerName); headerLines.addView(headerStatus) }
+            headerStatus.textSize = 12f
+        }
+        private val moreButton = iconButton(R.drawable.helpium_ic_more, p.headerText, R.string.helpium_more) { confirmClose() }
         private val adapter = MessagesAdapter()
         private val list = ListView(this@HelpiumActivity).apply {
             divider = null
             dividerHeight = 0
             selector = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
             clipToPadding = false
-            setPadding(dp(12), dp(8), dp(12), dp(8))
+            setPadding(dp(14), 0, dp(14), dp(14))
             transcriptMode = ListView.TRANSCRIPT_MODE_NORMAL
             isStackFromBottom = true
+            isVerticalScrollBarEnabled = false
             this.adapter = this@ThreadUi.adapter
         }
         private val footer = FrameLayout(this@HelpiumActivity)
         private var input: EditText? = null
+        private var sendButton: FrameLayout? = null
+        private var sendIcon: ImageView? = null
         private var footerState = ""
         private var lastCount = 0
+        private var lastAvatar: String? = "-"
 
         init {
+            root.addView(LinearLayout(this@HelpiumActivity).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(6), dp(8), dp(10), dp(8))
+                setBackgroundColor(p.headerBackground)
+                addView(headerAvatar, LinearLayout.LayoutParams(dp(36), dp(36)).apply { leftMargin = dp(8) })
+                addView(headerLines.apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(10), 0, dp(4), 0)
+                    addView(headerName)
+                    addView(headerStatus)
+                }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                addView(moreButton)
+                addView(closeButton(p.headerText))
+            })
+            root.addView(divider(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1))
             root.addView(list, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-            root.addView(divider())
+            root.addView(divider(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1))
             root.addView(footer)
         }
 
         fun render() {
+            // Like the web widget: an empty chat greets; a conversation says who is answering and how fast.
+            val name = store.agent?.name ?: store.settings?.botName ?: getString(R.string.helpium_title)
+            if (!store.hasConversation) {
+                headerStatus.text = store.settings?.botName.orEmpty()
+                headerStatus.visibility = if (headerStatus.text.isEmpty()) View.GONE else View.VISIBLE
+                headerName.text = getString(R.string.helpium_greeting)
+                headerName.maxLines = 2
+                swapHeaderLines(statusFirst = true)
+            } else {
+                headerName.text = name
+                headerName.maxLines = 1
+                headerStatus.visibility = View.VISIBLE
+                headerStatus.text = getString(
+                    if (store.agent == null && store.handoffRequested && !store.isClosed) R.string.helpium_waiting_for_agent else R.string.helpium_reply_time
+                )
+                swapHeaderLines(statusFirst = false)
+            }
+            val avatarUrl = store.agent?.avatarUrl ?: store.settings?.botAvatarUrl
+            if (avatarUrl != lastAvatar || headerAvatar.childCount == 0) {
+                lastAvatar = avatarUrl
+                headerAvatar.removeAllViews()
+                headerAvatar.addView(avatar(avatarUrl, name, 36))
+                if (store.settings?.isOnline != false) {
+                    headerAvatar.addView(View(this@HelpiumActivity).apply {
+                        background = shape(Color.parseColor("#22c55e"), dp(5).toFloat(), stroke = p.headerBackground)
+                    }, FrameLayout.LayoutParams(dp(10), dp(10), Gravity.BOTTOM or Gravity.END))
+                }
+            }
+            moreButton.visibility = if (store.hasConversation && !store.isClosed) View.VISIBLE else View.GONE
+
             adapter.items = buildItems()
+            // Messages sit at the bottom like any chat; the welcome sits at the top like the web widget.
+            list.isStackFromBottom = store.messages.isNotEmpty()
             adapter.notifyDataSetChanged()
             if (adapter.items.size != lastCount) {
                 lastCount = adapter.items.size
@@ -319,10 +305,20 @@ class HelpiumActivity : Activity() {
                     else -> closed()
                 })
             }
+            refreshSend()
         }
 
         private fun buildItems(): List<Item> {
-            val items = store.messages.map { Item.Message(it) }.toMutableList<Item>()
+            val messages = store.messages
+            val items = messages.mapIndexed { index, message ->
+                Item.Message(
+                    message,
+                    isFirst = !sameSender(messages.getOrNull(index - 1), message),
+                    isLast = !sameSender(message, messages.getOrNull(index + 1)),
+                    isLatest = index == messages.lastIndex,
+                )
+            }.toMutableList<Item>()
+            if (messages.isEmpty()) items.add(0, Item.Welcome)
             if (store.showHandoffButton) items += Item.Handoff
             if (store.isBotTyping || store.isAgentTyping) items += Item.Typing
             return items
@@ -330,37 +326,56 @@ class HelpiumActivity : Activity() {
 
         private fun composer(): View {
             val row = LinearLayout(this@HelpiumActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(8), dp(8), dp(8), dp(8))
+                gravity = Gravity.BOTTOM
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                setBackgroundColor(p.background)
             }
-            val attach = iconButton(R.drawable.helpium_ic_attach, R.string.helpium_attach_image) {
-                if (!store.needsPrechat) pickImage()
-            }.apply { imageTintList = ColorStateList.valueOf(palette.textSecondary) }
             val field = EditText(this@HelpiumActivity).apply {
                 hint = getString(R.string.helpium_placeholder)
-                background = rounded(palette.inputBackground, dp(20).toFloat())
-                setPadding(dp(14), dp(10), dp(14), dp(10))
-                setTextColor(palette.inputText)
-                setHintTextColor(palette.textSecondary)
+                background = null
+                setPadding(dp(14), dp(11), dp(4), dp(11))
+                setTextColor(p.inputText)
+                setHintTextColor(p.textSecondary)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
                 maxLines = 5
                 inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or InputType.TYPE_TEXT_FLAG_MULTI_LINE
-                imeOptions = EditorInfo.IME_ACTION_SEND
                 addTextChangedListener(object : TextWatcher {
                     override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
                     override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
-                    override fun afterTextChanged(s: Editable?) { if (!s.isNullOrEmpty()) store.customerTyping() }
+                    override fun afterTextChanged(s: Editable?) {
+                        if (!s.isNullOrEmpty()) store.customerTyping()
+                        refreshSend()
+                    }
                 })
-                setOnEditorActionListener { _, action, _ -> if (action == EditorInfo.IME_ACTION_SEND) { send(); true } else false }
             }
             input = field
-            val sendButton = iconButton(R.drawable.helpium_ic_send, R.string.helpium_send) { send() }.apply {
-                imageTintList = ColorStateList.valueOf(accent)
+            val box = LinearLayout(this@HelpiumActivity).apply {
+                gravity = Gravity.BOTTOM
+                background = shape(p.inputBackground, dp(22).toFloat(), stroke = p.border)
+                addView(field, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                addView(iconButton(R.drawable.helpium_ic_attach, p.textSecondary, R.string.helpium_attach_image, size = 42) {
+                    if (!store.needsPrechat) pickImage()
+                })
             }
-            row.addView(attach)
-            row.addView(field, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            row.addView(sendButton)
+            val icon = icon(R.drawable.helpium_ic_arrow_up, p.textSecondary, 20)
+            val send = FrameLayout(this@HelpiumActivity).apply {
+                contentDescription = getString(R.string.helpium_send)
+                isClickable = true
+                setOnClickListener { send() }
+                addView(icon, FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER))
+            }
+            sendButton = send
+            sendIcon = icon
+            row.addView(box, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            row.addView(send, LinearLayout.LayoutParams(dp(44), dp(44)).apply { leftMargin = dp(8) })
             return row
+        }
+
+        private fun refreshSend() {
+            val can = !input?.text.isNullOrBlank() && !store.isBotTyping
+            sendButton?.background = shape(if (can) p.primary else p.surface, dp(22).toFloat())
+            sendButton?.isEnabled = can
+            sendIcon?.imageTintList = ColorStateList.valueOf(if (can) p.onPrimary else p.textSecondary)
         }
 
         private fun send() {
@@ -374,45 +389,47 @@ class HelpiumActivity : Activity() {
         private fun closed(): View = LinearLayout(this@HelpiumActivity).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(16), dp(14), dp(16), dp(14))
-            addView(secondaryText(getString(when (store.closedReason) {
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            setBackgroundColor(p.background)
+            addView(text(getString(when (store.closedReason) {
                 "customer" -> R.string.helpium_closed_customer
                 "inactivity" -> R.string.helpium_closed_inactivity
                 "agent", "rule", "unrelated", "automated" -> R.string.helpium_closed_team
                 else -> R.string.helpium_closed
-            })).apply { gravity = Gravity.CENTER })
-            addView(primaryButton(getString(R.string.helpium_start_new)) { store.startNewConversation() },
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)).apply { topMargin = dp(10) })
+            }), 13f, p.textSecondary).apply { gravity = Gravity.CENTER })
+            addView(pill(getString(R.string.helpium_start_new), filled = true) { store.startNewConversation() }, wrap().apply { topMargin = dp(12) })
         }
 
         private fun rating(): View {
             val column = LinearLayout(this@HelpiumActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER_HORIZONTAL
-                setPadding(dp(16), dp(14), dp(16), dp(14))
+                setPadding(dp(16), dp(16), dp(16), dp(12))
+                setBackgroundColor(p.background)
             }
-            column.addView(TextView(this@HelpiumActivity).apply {
-                text = getString(R.string.helpium_rate_title)
-                typeface = Typeface.DEFAULT_BOLD
-                setTextColor(palette.text)
-            })
+            column.addView(text(getString(R.string.helpium_rate_title), 16f, p.text, bold = true))
             val faces = listOf("😞", "😐", "🙂", "😀", "🤩")
             val labels = listOf(R.string.helpium_rating_1, R.string.helpium_rating_2, R.string.helpium_rating_3, R.string.helpium_rating_4, R.string.helpium_rating_5)
             val comment = EditText(this@HelpiumActivity).apply {
                 hint = getString(R.string.helpium_rate_comment)
+                setTextColor(p.inputText)
+                setHintTextColor(p.textSecondary)
+                background = shape(p.inputBackground, dp(12).toFloat(), stroke = p.border)
+                setPadding(dp(12), dp(10), dp(12), dp(10))
                 visibility = View.GONE
             }
             var selected = 0
-            val send = textButton(getString(R.string.helpium_rate_send)) { store.rate(selected, comment.text.toString()) }.apply { visibility = View.GONE }
-            val row = LinearLayout(this@HelpiumActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+            val send = pill(getString(R.string.helpium_rate_send), filled = true) { store.rate(selected, comment.text.toString()) }.apply { visibility = View.GONE }
+            val faceViews = mutableListOf<View>()
+            val row = LinearLayout(this@HelpiumActivity).apply { gravity = Gravity.CENTER }
             faces.forEachIndexed { index, face ->
                 val rating = index + 1
-                row.addView(LinearLayout(this@HelpiumActivity).apply {
+                val option = LinearLayout(this@HelpiumActivity).apply {
                     orientation = LinearLayout.VERTICAL
                     gravity = Gravity.CENTER_HORIZONTAL
-                    setPadding(dp(8), dp(8), dp(8), dp(8))
-                    addView(TextView(this@HelpiumActivity).apply { text = face; setTextSize(TypedValue.COMPLEX_UNIT_SP, 28f) })
-                    addView(secondaryText(getString(labels[index])).apply { setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f) })
+                    setPadding(dp(8), dp(10), dp(8), dp(6))
+                    addView(TextView(this@HelpiumActivity).apply { text = face; setTextSize(TypedValue.COMPLEX_UNIT_SP, 30f) })
+                    addView(text(getString(labels[index]), 11f, p.textSecondary))
                     setOnClickListener {
                         if (rating >= 3) {
                             store.rate(rating, null)
@@ -420,20 +437,32 @@ class HelpiumActivity : Activity() {
                             selected = rating
                             comment.visibility = View.VISIBLE
                             send.visibility = View.VISIBLE
+                            faceViews.forEachIndexed { i, v -> v.alpha = if (i == index) 1f else 0.35f }
                         }
                     }
-                })
+                }
+                faceViews += option
+                row.addView(option)
             }
             column.addView(row)
-            column.addView(comment, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-            column.addView(send)
-            column.addView(textButton(getString(R.string.helpium_rate_skip)) { store.skipRating() })
+            column.addView(comment, match().apply { topMargin = dp(8) })
+            column.addView(send, wrap().apply { topMargin = dp(10) })
+            column.addView(text(getString(R.string.helpium_rate_skip), 13f, p.textSecondary).apply {
+                setPadding(dp(12), dp(10), dp(12), dp(4))
+                setOnClickListener { store.skipRating() }
+            })
             return column
         }
     }
 
+    private fun sameSender(a: ChatMessage?, b: ChatMessage?): Boolean {
+        if (a == null || b == null || a.role != b.role || a.role == Role.SYSTEM) return false
+        return a.role != Role.AGENT || a.senderName == b.senderName
+    }
+
     private sealed class Item {
-        data class Message(val message: ChatMessage) : Item()
+        data class Message(val message: ChatMessage, val isFirst: Boolean, val isLast: Boolean, val isLatest: Boolean) : Item()
+        object Welcome : Item()
         object Handoff : Item()
         object Typing : Item()
     }
@@ -447,94 +476,151 @@ class HelpiumActivity : Activity() {
         override fun isEnabled(position: Int) = false
 
         override fun getView(position: Int, convertView: View?, parent: ViewGroup): View = when (val item = items[position]) {
-            is Item.Message -> messageView(item.message, position == items.indexOfLast { it is Item.Message })
-            Item.Handoff -> LinearLayout(this@HelpiumActivity).apply {
-                setPadding(dp(36), dp(4), 0, dp(4))
-                addView(outlinedButton(getString(R.string.helpium_talk_to_human)) { store.requestHuman() })
+            is Item.Message -> messageView(item).apply { setPadding(paddingLeft, if (item.isFirst) dp(14) else dp(3), paddingRight, 0) }
+            Item.Handoff -> FrameLayout(this@HelpiumActivity).apply {
+                setPadding(0, dp(14), 0, 0)
+                addView(pill(getString(R.string.helpium_talk_to_human), filled = false, iconRes = R.drawable.helpium_ic_person) { store.requestHuman() },
+                    FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL))
             }
-            Item.Typing -> typingView()
+            Item.Typing -> typingView().apply { setPadding(0, dp(14), 0, 0) }
+            Item.Welcome -> welcomeView()
         }
     }
 
-    private fun messageView(message: ChatMessage, isLatest: Boolean): View {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(5), 0, dp(5))
-        }
-
-        if (message.role == Role.SYSTEM) {
-            row.gravity = Gravity.CENTER_HORIZONTAL
-            row.addView(secondaryText(message.content).apply { gravity = Gravity.CENTER; setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f) })
-            return row
-        }
-
+    private fun messageView(item: Item.Message): LinearLayout {
+        val message = item.message
         val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val maxWidth = (resources.displayMetrics.widthPixels * 0.75).toInt()
+        val maxWidth = (resources.displayMetrics.widthPixels * 0.74).toInt()
 
-        if (message.role == Role.CUSTOMER) {
-            row.gravity = Gravity.END
-            column.gravity = Gravity.END
-            images(message, column, maxWidth)
-            if (message.content.isNotEmpty()) column.addView(bubble(message.content, palette.customerBubble, palette.customerBubbleText, maxWidth, palette.customerBubbleText))
-            column.alpha = if (message.isPending) 0.6f else 1f
-            row.addView(column)
-            return row
-        }
-
-        val isBot = message.role == Role.BOT
-        val name = if (isBot) store.settings?.botName.orEmpty() else message.senderName.orEmpty()
-        row.gravity = Gravity.BOTTOM
-        row.addView(avatar(if (isBot) store.settings?.botAvatarUrl else message.senderAvatarUrl, name))
-        column.setPadding(dp(8), 0, 0, 0)
-        column.addView(secondaryText(name).apply { setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f) })
-        images(message, column, maxWidth)
-        if (message.content.isNotEmpty()) column.addView(bubble(message.content, palette.agentBubble, palette.agentBubbleText, maxWidth, palette.link))
-
-        message.attachments.filterNot { it.isImage }.forEach { file ->
-            column.addView(textButton("📄 " + (file.name ?: Uri.parse(file.url).lastPathSegment.orEmpty())) { openUrl(file.url) })
-        }
-
-        if (message.sources.isNotEmpty()) {
-            val links = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
-            message.sources.forEach { source ->
-                links.addView(textButton(source.title) { source.url?.let(::openUrl) }.apply { setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f) })
+        when (message.role) {
+            Role.SYSTEM -> {
+                column.gravity = Gravity.CENTER_HORIZONTAL
+                column.addView(text(message.content, 12f, p.textSecondary).apply {
+                    gravity = Gravity.CENTER
+                    background = shape(p.surface, dp(14).toFloat())
+                    setPadding(dp(12), dp(6), dp(12), dp(6))
+                }, wrap().apply { leftMargin = dp(24); rightMargin = dp(24) })
             }
-            column.addView(textButton("▸ " + getString(R.string.helpium_sources)) {
-                links.visibility = if (links.visibility == View.VISIBLE) View.GONE else View.VISIBLE
-            }.apply { setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f) })
-            column.addView(links)
-        }
-
-        val interactionsEnabled = isLatest && !store.isBotTyping && !store.isClosed
-        when (val interactive = message.interactive) {
-            Interactive.Retry -> column.addView(outlinedButton(getString(R.string.helpium_retry)) { store.retry(message.id) })
-            Interactive.Confirm -> if (interactionsEnabled) {
-                column.addView(LinearLayout(this).apply {
-                    addView(primaryButton(getString(R.string.helpium_accept)) { store.send(getString(R.string.helpium_accept)) })
-                    addView(outlinedButton(getString(R.string.helpium_cancel)) { store.send(getString(R.string.helpium_cancel)) },
-                        LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { leftMargin = dp(8) })
-                })
-            }
-            is Interactive.Suggestions -> if (interactionsEnabled) {
-                interactive.options.forEach { option -> column.addView(outlinedButton(option) { store.send(option) }) }
-            }
-            null -> Unit
-        }
-
-        if (isBot && message.interactive != Interactive.Retry && message.content.isNotEmpty()) {
-            column.addView(LinearLayout(this).apply {
-                val up = textButton(if (message.feedback == "up") "👍" else "👍🏻") { store.feedback(message.id, true) }
-                val down = textButton(if (message.feedback == "down") "👎" else "👎🏻") { store.feedback(message.id, false) }
-                listOf(up, down).forEach {
-                    it.isEnabled = message.feedback == null
-                    it.alpha = if (message.feedback == null || (it == up) == (message.feedback == "up")) 1f else 0.35f
-                    addView(it)
+            Role.CUSTOMER -> {
+                column.gravity = Gravity.END
+                images(message, column, maxWidth)
+                if (message.content.isNotEmpty()) {
+                    column.addView(bubble(message.content, p.customerBubble, p.customerBubbleText, p.customerBubbleText, maxWidth, customer = true, last = item.isLast).apply {
+                        alpha = if (message.isPending) 0.6f else 1f
+                    }, wrap().apply { leftMargin = dp(56) })
                 }
+                if (item.isLast) {
+                    val label = if (message.isPending) "…" else (if (message.seenAt != null) "✓✓ " else "") + timeLabel(message.createdAt)
+                    column.addView(text(label, 11f, p.textSecondary).apply { setPadding(0, dp(4), dp(2), 0) }, wrap())
+                }
+            }
+            Role.BOT, Role.AGENT -> {
+                val isBot = message.role == Role.BOT
+                val name = senderName(message)
+                val row = LinearLayout(this).apply { gravity = Gravity.BOTTOM }
+                row.addView(
+                    if (item.isLast) avatar(if (isBot) store.settings?.botAvatarUrl else message.senderAvatarUrl, name, 28) else View(this),
+                    LinearLayout.LayoutParams(dp(28), dp(28)),
+                )
+                val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(8), 0, dp(40), 0) }
+                images(message, content, maxWidth)
+                if (message.content.isNotEmpty()) content.addView(bubble(message.content, p.agentBubble, p.agentBubbleText, p.link, maxWidth, customer = false, last = item.isLast), wrap())
+                message.attachments.filterNot { it.isImage }.forEach { file -> content.addView(fileChip(file), wrap().apply { topMargin = dp(6) }) }
+                if (message.sources.isNotEmpty()) content.addView(sources(message))
+                interactive(message, item.isLatest)?.let { content.addView(it, wrap().apply { topMargin = dp(8) }) }
+                row.addView(content)
+                column.addView(row)
+
+                if (item.isLast) {
+                    column.addView(LinearLayout(this).apply {
+                        gravity = Gravity.CENTER_VERTICAL
+                        setPadding(dp(36), dp(4), 0, 0)
+                        val label = if (isBot) "$name · ${getString(R.string.helpium_ai)} · ${timeLabel(message.createdAt)}" else "$name · ${timeLabel(message.createdAt)}"
+                        addView(text(label, 11f, p.textSecondary))
+                        if (isBot && message.interactive != Interactive.Retry && message.content.isNotEmpty()) {
+                            listOf(true, false).forEach { up ->
+                                val chosen = message.feedback == (if (up) "up" else "down")
+                                addView(iconButton(if (up) R.drawable.helpium_ic_thumb_up else R.drawable.helpium_ic_thumb_down,
+                                    if (chosen) p.primary else p.textSecondary, R.string.helpium_send, size = 28, iconSize = 14) {
+                                    if (message.feedback == null) store.feedback(message.id, up)
+                                }.apply { alpha = if (message.feedback == null || chosen) 1f else 0.35f })
+                            }
+                        }
+                    })
+                }
+            }
+        }
+        return column
+    }
+
+    /** What an empty chat shows, like the web widget: a title, what to do, and one-tap instant answers. */
+    private fun welcomeView(): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER_HORIZONTAL
+        setPadding(dp(16), dp(40), dp(16), dp(12))
+        addView(text(getString(R.string.helpium_welcome_title), 22f, p.text, bold = true).apply { gravity = Gravity.CENTER }, wrap())
+        val subtitle = if (store.settings?.aiAvailable == false) R.string.helpium_welcome_subtitle_team else R.string.helpium_welcome_subtitle
+        addView(text(getString(subtitle), 14f, p.textSecondary).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(8), dp(8), dp(8), 0)
+            setLineSpacing(0f, 1.15f)
+        }, wrap())
+        val answers = store.settings?.instantAnswers.orEmpty()
+        if (answers.isNotEmpty()) {
+            addView(text(getString(R.string.helpium_instant_answers).uppercase(), 11f, p.textSecondary, bold = true).apply {
+                setPadding(0, dp(28), 0, dp(10))
+            }, wrap())
+            answers.forEach { answer ->
+                addView(pill(answer.label, filled = false) { store.sendInstantAnswer(answer) }, wrap().apply { bottomMargin = dp(8) })
+            }
+        }
+    }
+
+    private fun interactive(message: ChatMessage, isLatest: Boolean): View? {
+        val enabled = isLatest && !store.isBotTyping && !store.isClosed
+        return when (val interactive = message.interactive) {
+            Interactive.Retry -> pill(getString(R.string.helpium_retry), filled = false) { store.retry(message.id) }
+            Interactive.Confirm -> if (!enabled) null else LinearLayout(this).apply {
+                addView(pill(getString(R.string.helpium_accept), filled = true) { store.send(getString(R.string.helpium_accept)) })
+                addView(pill(getString(R.string.helpium_cancel), filled = false) { store.send(getString(R.string.helpium_cancel)) }, wrap().apply { leftMargin = dp(8) })
+            }
+            is Interactive.Suggestions -> if (!enabled) null else LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                interactive.options.forEach { option -> addView(pill(option, filled = false) { store.send(option) }, wrap().apply { bottomMargin = dp(6) }) }
+            }
+            null -> null
+        }
+    }
+
+    private fun sources(message: ChatMessage): View {
+        val links = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
+        message.sources.forEach { source ->
+            links.addView(text(source.title, 13f, p.link).apply {
+                setPadding(0, dp(4), 0, dp(4))
+                setOnClickListener { source.url?.let(::openUrl) }
             })
         }
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(2), dp(6), 0, 0)
+            addView(text("▸ " + getString(R.string.helpium_sources), 12f, p.link).apply {
+                setOnClickListener { links.visibility = if (links.visibility == View.VISIBLE) View.GONE else View.VISIBLE }
+            })
+            addView(links)
+        }
+    }
 
-        row.addView(column)
-        return row
+    private fun fileChip(file: Attachment): View = LinearLayout(this).apply {
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(12), dp(10), dp(14), dp(10))
+        background = shape(p.surface, dp(12).toFloat(), stroke = p.border)
+        setOnClickListener { openUrl(file.url) }
+        addView(icon(R.drawable.helpium_ic_doc, p.primary, 18))
+        addView(text(file.name ?: Uri.parse(file.url).lastPathSegment.orEmpty(), 14f, p.text).apply {
+            setPadding(dp(8), 0, 0, 0)
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.MIDDLE
+        })
     }
 
     private fun images(message: ChatMessage, column: LinearLayout, maxWidth: Int) {
@@ -547,40 +633,72 @@ class HelpiumActivity : Activity() {
             column.addView(imageView(maxWidth).apply {
                 ImageLoader.load(attachment.url, this)
                 setOnClickListener { openUrl(attachment.url) }
-            })
+            }, wrap().apply { bottomMargin = dp(4) })
         }
     }
 
     private fun imageView(maxWidth: Int) = ImageView(this).apply {
         adjustViewBounds = true
-        maxHeight = dp(260)
+        maxHeight = dp(280)
         this.maxWidth = minOf(maxWidth, dp(240))
-        scaleType = ImageView.ScaleType.FIT_START
+        minimumWidth = dp(120)
+        minimumHeight = dp(90)
+        scaleType = ImageView.ScaleType.CENTER_CROP
+        background = shape(p.surface, dp(16).toFloat())
         clipToOutline = true
-        background = rounded(palette.surface, dp(14).toFloat())
-        setPadding(0, dp(2), 0, dp(2))
     }
 
     private fun typingView(): View {
         val isBot = store.isBotTyping
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.BOTTOM; setPadding(0, dp(5), 0, dp(5)) }
-        row.addView(avatar(if (isBot) store.settings?.botAvatarUrl else store.agent?.avatarUrl, if (isBot) store.settings?.botName.orEmpty() else store.agent?.name.orEmpty()))
-        val text = if (isBot && store.botTypingStatus != null) store.botTypingStatus!! else "• • •"
-        row.addView(bubble(text, palette.agentBubble, palette.agentBubbleText, dp(260), palette.link).apply {
-            alpha = 0.85f
+        val row = LinearLayout(this).apply { gravity = Gravity.BOTTOM; clipChildren = false }
+        row.addView(avatar(if (isBot) store.settings?.botAvatarUrl else store.agent?.avatarUrl,
+            if (isBot) store.settings?.botName.orEmpty() else store.agent?.name.orEmpty(), 28), LinearLayout.LayoutParams(dp(28), dp(28)))
+        val bubble = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            background = bubbleShape(p.agentBubble, customer = false, last = true)
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            clipChildren = false
+            clipToPadding = false
             contentDescription = getString(R.string.helpium_typing)
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { leftMargin = dp(8) })
+        }
+        val status = store.botTypingStatus
+        if (isBot && status != null) {
+            bubble.addView(ProgressBar(this).apply { indeterminateTintList = ColorStateList.valueOf(withAlpha(p.agentBubbleText, 0.6f)) }, LinearLayout.LayoutParams(dp(16), dp(16)))
+            bubble.addView(text(status, 13f, withAlpha(p.agentBubbleText, 0.75f)).apply { setPadding(dp(8), 0, 0, 0) })
+        } else {
+            repeat(3) { index ->
+                val dot = View(this).apply { background = shape(withAlpha(p.agentBubbleText, 0.45f), dp(4).toFloat()) }
+                bubble.addView(dot, LinearLayout.LayoutParams(dp(7), dp(7)).apply { if (index > 0) leftMargin = dp(5) })
+                ObjectAnimator.ofFloat(dot, View.TRANSLATION_Y, dp(3).toFloat(), -dp(3).toFloat()).apply {
+                    duration = 450
+                    startDelay = index * 150L
+                    repeatCount = ValueAnimator.INFINITE
+                    repeatMode = ValueAnimator.REVERSE
+                    start()
+                }
+            }
+        }
+        row.addView(bubble, wrap().apply { leftMargin = dp(8) })
         return row
     }
 
     // endregion
 
-    // region Pre-chat and image picking
+    // region Dialogs and image picking
+
+    private fun confirmClose() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.helpium_close_confirm_title)
+            .setMessage(R.string.helpium_close_confirm_message)
+            .setPositiveButton(R.string.helpium_end) { _, _ -> store.close() }
+            .setNegativeButton(R.string.helpium_cancel, null)
+            .show()
+    }
 
     private fun prechat(pendingText: String) {
         val form = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(8), dp(20), 0) }
         fun field(hint: Int, type: Int) = EditText(this).apply { this.hint = getString(hint); inputType = type }.also(form::addView)
-        form.addView(secondaryText(getString(R.string.helpium_prechat_subtitle)))
+        form.addView(TextView(this).apply { text = getString(R.string.helpium_prechat_subtitle) })
         val first = field(R.string.helpium_first_name, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PERSON_NAME or InputType.TYPE_TEXT_FLAG_CAP_WORDS)
         val last = field(R.string.helpium_last_name, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PERSON_NAME or InputType.TYPE_TEXT_FLAG_CAP_WORDS)
         val email = field(R.string.helpium_email, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS)
@@ -640,110 +758,145 @@ class HelpiumActivity : Activity() {
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
-    private fun rounded(fill: Int, radius: Float, stroke: Int? = null) = GradientDrawable().apply {
+    private fun match() = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+
+    private fun wrap() = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+
+    private fun withAlpha(color: Int, alpha: Float) = (color and 0x00FFFFFF) or ((alpha * 255).toInt() shl 24)
+
+    private fun shape(fill: Int, radius: Float, stroke: Int? = null) = GradientDrawable().apply {
         setColor(fill)
         cornerRadius = radius
-        stroke?.let { setStroke(dp(1), it) }
+        stroke?.let { setStroke(maxOf(1, dp(1) / 2 + 1), it) }
     }
 
-    private fun bubble(text: String, fill: Int, textColor: Int, maxWidth: Int, linkColor: Int) = TextView(this).apply {
-        this.text = Markdown.render(text)
+    /** Fully rounded, with a tighter corner pointing at the sender on the last message of a group. */
+    private fun bubbleShape(fill: Int, customer: Boolean, last: Boolean) = GradientDrawable().apply {
+        setColor(fill)
+        val big = dp(18).toFloat()
+        val small = if (last) dp(5).toFloat() else big
+        val tl = if (customer) big else small
+        val tr = if (customer) small else big
+        val br = if (customer) dp(5).toFloat() else big
+        val bl = if (customer) big else dp(5).toFloat()
+        cornerRadii = floatArrayOf(tl, tl, tr, tr, br, br, bl, bl)
+    }
+
+    private fun bubble(content: String, fill: Int, textColor: Int, linkColor: Int, maxWidth: Int, customer: Boolean, last: Boolean) = TextView(this).apply {
+        text = linkified(content)
         setTextColor(textColor)
         setLinkTextColor(linkColor)
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 15.5f)
+        setLineSpacing(0f, 1.12f)
         setTextIsSelectable(true)
-        Linkify.addLinks(this, Linkify.WEB_URLS or Linkify.EMAIL_ADDRESSES)
         movementMethod = LinkMovementMethod.getInstance()
         this.maxWidth = maxWidth
         setPadding(dp(14), dp(10), dp(14), dp(10))
-        background = rounded(fill, dp(18).toFloat())
+        background = bubbleShape(fill, customer, last)
     }
 
-    private fun avatar(url: String?, name: String): View {
-        val size = dp(28)
-        val frame = FrameLayout(this).apply { background = rounded(palette.surface, size / 2f); clipToOutline = true }
-        frame.addView(TextView(this).apply {
-            text = name.take(1).uppercase()
-            gravity = Gravity.CENTER
-            setTextColor(palette.textSecondary)
-            typeface = Typeface.DEFAULT_BOLD
-        }, FrameLayout.LayoutParams(size, size))
-        if (url != null) {
-            frame.addView(ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; ImageLoader.load(url, this, 128) }, FrameLayout.LayoutParams(size, size))
+    /** Markdown links plus bare URLs and emails. Linkify drops existing links, so the markdown ones are put back. */
+    private fun linkified(content: String): CharSequence {
+        val spannable = android.text.SpannableString(Markdown.render(content))
+        val markdownLinks = spannable.getSpans(0, spannable.length, android.text.style.URLSpan::class.java)
+            .map { Triple(spannable.getSpanStart(it), spannable.getSpanEnd(it), it.url) }
+        Linkify.addLinks(spannable, Linkify.WEB_URLS or Linkify.EMAIL_ADDRESSES)
+        markdownLinks.forEach { (start, end, url) ->
+            spannable.setSpan(android.text.style.URLSpan(url), start, end, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
-        frame.layoutParams = LinearLayout.LayoutParams(size, size)
+        return spannable
+    }
+
+    private fun text(value: String, size: Float, color: Int, bold: Boolean = false) = TextView(this).apply {
+        text = value
+        setTextColor(color)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, size)
+        if (bold) typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+    }
+
+    private fun icon(res: Int, tint: Int, size: Int) = ImageView(this).apply {
+        setImageResource(res)
+        imageTintList = ColorStateList.valueOf(tint)
+        layoutParams = LinearLayout.LayoutParams(dp(size), dp(size))
+    }
+
+    private fun iconButton(res: Int, tint: Int, description: Int, size: Int = 40, iconSize: Int = 22, onClick: () -> Unit) = ImageButton(this).apply {
+        setImageResource(res)
+        imageTintList = ColorStateList.valueOf(tint)
+        background = RippleDrawable(ColorStateList.valueOf(0x22000000), null, shape(Color.WHITE, dp(size).toFloat()))
+        scaleType = ImageView.ScaleType.CENTER_INSIDE
+        val inset = dp((size - iconSize) / 2)
+        setPadding(inset, inset, inset, inset)
+        contentDescription = getString(description)
+        layoutParams = LinearLayout.LayoutParams(dp(size), dp(size))
+        setOnClickListener { onClick() }
+    }
+
+    private fun closeButton(color: Int) = iconButton(R.drawable.helpium_ic_close, color, R.string.helpium_close, size = 34, iconSize = 18) { finish() }.apply {
+        background = RippleDrawable(ColorStateList.valueOf(0x22000000), shape(withAlpha(color, 0.12f), dp(17).toFloat()), null)
+    }
+
+    private fun pill(label: String, filled: Boolean, iconRes: Int? = null, onClick: () -> Unit) = LinearLayout(this).apply {
+        gravity = Gravity.CENTER
+        setPadding(dp(16), dp(9), dp(16), dp(9))
+        background = RippleDrawable(ColorStateList.valueOf(0x22000000),
+            shape(if (filled) p.primary else Color.TRANSPARENT, dp(20).toFloat(), stroke = if (filled) null else p.primary), null)
+        isClickable = true
+        setOnClickListener { onClick() }
+        val color = if (filled) p.onPrimary else p.primary
+        iconRes?.let { addView(icon(it, color, 16), LinearLayout.LayoutParams(dp(16), dp(16)).apply { rightMargin = dp(6) }) }
+        addView(text(label, 14f, color, bold = true))
+    }
+
+    private fun badge(count: Int) = text(count.toString(), 11f, p.unreadBadgeText, bold = true).apply {
+        gravity = Gravity.CENTER
+        minWidth = dp(20)
+        setPadding(dp(6), dp(2), dp(6), dp(2))
+        background = shape(p.unreadBadge, dp(10).toFloat())
+    }
+
+    private fun avatar(url: String?, name: String, size: Int, ring: Int? = null): View {
+        val px = dp(size)
+        val frame = FrameLayout(this).apply {
+            background = shape(p.surface, px / 2f, stroke = ring)
+            clipToOutline = true
+            layoutParams = LinearLayout.LayoutParams(px, px)
+        }
+        frame.addView(text(name.take(1).uppercase(), size * 0.42f, p.textSecondary, bold = true).apply { gravity = Gravity.CENTER }, FrameLayout.LayoutParams(px, px))
+        if (url != null) {
+            frame.addView(ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; ImageLoader.load(url, this, 128) }, FrameLayout.LayoutParams(px, px))
+        }
         return frame
     }
 
-    private fun secondaryText(value: String) = TextView(this).apply {
-        text = value
-        setTextColor(palette.textSecondary)
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-    }
-
-    private fun primaryButton(label: String, onClick: () -> Unit) = Button(this).apply {
-        text = label
-        isAllCaps = false
-        setTextColor(onAccent)
-        typeface = Typeface.DEFAULT_BOLD
-        background = RippleDrawable(ColorStateList.valueOf(0x33000000), rounded(accent, dp(14).toFloat()), null)
-        stateListAnimator = null
-        setOnClickListener { onClick() }
-    }
-
-    private fun outlinedButton(label: String, onClick: () -> Unit) = Button(this).apply {
-        text = label
-        isAllCaps = false
-        setTextColor(accent)
-        background = RippleDrawable(ColorStateList.valueOf(0x22000000), rounded(Color.TRANSPARENT, dp(12).toFloat(), accent), null)
-        stateListAnimator = null
-        minHeight = dp(40)
-        setPadding(dp(14), 0, dp(14), 0)
-        setOnClickListener { onClick() }
-    }
-
-    private fun outlinedRow(label: String, onClick: () -> Unit) = TextView(this).apply {
-        text = label
-        setTextColor(palette.text)
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-        setPadding(dp(16), dp(14), dp(16), dp(14))
-        background = RippleDrawable(ColorStateList.valueOf(0x22000000), rounded(palette.surface, dp(12).toFloat(), palette.border), null)
-        setOnClickListener { onClick() }
-    }
-
-    private fun textButton(label: String, onClick: () -> Unit) = TextView(this).apply {
-        text = label
-        setTextColor(accent)
-        setPadding(dp(4), dp(6), dp(8), dp(6))
-        setOnClickListener { onClick() }
-    }
-
-    private fun iconButton(icon: Int, description: Int, onClick: () -> Unit) = ImageButton(this).apply {
-        setImageResource(icon)
-        imageTintList = ColorStateList.valueOf(palette.headerText)
-        background = null
-        contentDescription = getString(description)
-        layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
-        setOnClickListener { onClick() }
-    }
-
-    private fun divider() = View(this).apply {
-        setBackgroundColor(palette.border)
-        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1).coerceAtLeast(1))
-    }
-
-    private fun centered(view: View) = FrameLayout(this).apply {
-        addView(view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
-        setPadding(dp(24), dp(24), dp(24), dp(24))
-    }
+    private fun divider() = View(this).apply { setBackgroundColor(p.border) }
 
     private fun openUrl(url: String) {
         runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+    }
+
+    /** "Just now", "6:50 PM" today, "Oct 14, 6:50 PM" before. */
+    private fun timeLabel(iso: String): String {
+        val date = parseIso(iso) ?: return ""
+        if (System.currentTimeMillis() - date.time < 60_000) return getString(R.string.helpium_just_now)
+        val locale = Locale(Strings.locale(this))
+        val today = Calendar.getInstance().apply { time = Date() }
+        val then = Calendar.getInstance().apply { time = date }
+        val sameDay = today.get(Calendar.YEAR) == then.get(Calendar.YEAR) && today.get(Calendar.DAY_OF_YEAR) == then.get(Calendar.DAY_OF_YEAR)
+        val time = android.text.format.DateFormat.getTimeFormat(this).format(date)
+        return if (sameDay) time else SimpleDateFormat("MMM d", locale).format(date) + ", " + time
     }
 
     // endregion
 
     companion object {
         private const val PICK_IMAGE = 4210
+
+        internal fun parseIso(iso: String): Date? {
+            val clean = iso.replace(Regex("\\.\\d+"), "").replace("Z", "+0000").replace(Regex("([+-]\\d{2}):(\\d{2})$"), "$1$2")
+            return runCatching {
+                SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }.parse(clean)
+            }.getOrNull()
+        }
     }
 }

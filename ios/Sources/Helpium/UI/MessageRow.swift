@@ -3,6 +3,8 @@ import SwiftUI
 struct MessageRow: View {
     let message: ChatMessage
     let isLatest: Bool
+    let isFirstInGroup: Bool
+    let isLastInGroup: Bool
     let botName: String
     let botAvatar: String?
     let interactionsEnabled: Bool
@@ -13,41 +15,69 @@ struct MessageRow: View {
     @State private var showSources = false
     @Environment(\.palette) private var palette
 
+    private let avatarSize: CGFloat = 28
+
     var body: some View {
         switch message.role {
         case .system:
             Text(message.content)
-                .font(.footnote)
+                .font(.caption)
                 .foregroundColor(palette.textSecondary)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(Capsule().fill(palette.surface))
+                .padding(.horizontal, 24)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 4)
         case .customer:
-            HStack {
-                Spacer(minLength: 48)
-                VStack(alignment: .trailing, spacing: 4) {
-                    images
-                    if !message.content.isEmpty {
-                        bubble(fill: palette.customerBubble, text: palette.customerBubbleText, link: palette.customerBubbleText)
+            VStack(alignment: .trailing, spacing: 4) {
+                HStack {
+                    Spacer(minLength: 56)
+                    VStack(alignment: .trailing, spacing: 4) {
+                        images
+                        if !message.content.isEmpty {
+                            bubble(fill: palette.customerBubble, text: palette.customerBubbleText, link: palette.customerBubbleText, isCustomer: true)
+                        }
                     }
+                    .opacity(message.isPending ? 0.6 : 1)
                 }
-                .opacity(message.isPending ? 0.6 : 1)
+                if isLastInGroup {
+                    Text(message.isPending ? "…" : (message.seenAt != nil ? "✓✓ " : "") + TimeLabel.short(message.createdAt))
+                        .font(.caption2)
+                        .foregroundColor(palette.textSecondary)
+                }
             }
         case .bot, .agent:
-            HStack(alignment: .bottom, spacing: 8) {
-                Avatar(url: message.role == .bot ? botAvatar : message.senderAvatarUrl, fallback: senderName)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(senderName).font(.caption).foregroundColor(palette.textSecondary)
-                    images
-                    if !message.content.isEmpty {
-                        bubble(fill: palette.agentBubble, text: palette.agentBubbleText, link: palette.link)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .bottom, spacing: 8) {
+                    Group {
+                        if isLastInGroup {
+                            Avatar(url: message.role == .bot ? botAvatar : message.senderAvatarUrl, fallback: senderName, size: avatarSize)
+                        } else {
+                            Color.clear.frame(width: avatarSize, height: avatarSize)
+                        }
                     }
-                    files
-                    if !message.sources.isEmpty { sources }
-                    interactive
-                    if message.role == .bot && message.interactive != .retry && !message.content.isEmpty { feedback }
+                    VStack(alignment: .leading, spacing: 6) {
+                        images
+                        if !message.content.isEmpty {
+                            bubble(fill: palette.agentBubble, text: palette.agentBubbleText, link: palette.link, isCustomer: false)
+                        }
+                        files
+                        if !message.sources.isEmpty { sources }
+                        interactive
+                    }
+                    Spacer(minLength: 40)
                 }
-                Spacer(minLength: 32)
+                if isLastInGroup {
+                    HStack(spacing: 10) {
+                        Text("\(senderName)\(message.role == .bot ? " · AI" : "") · \(TimeLabel.short(message.createdAt))")
+                            .font(.caption2)
+                            .foregroundColor(palette.textSecondary)
+                        if message.role == .bot && message.interactive != .retry && !message.content.isEmpty { feedback }
+                    }
+                    .padding(.leading, avatarSize + 8)
+                }
             }
         }
     }
@@ -56,12 +86,13 @@ struct MessageRow: View {
         message.role == .bot ? botName : (message.senderName ?? "")
     }
 
-    private func bubble(fill: Color, text: Color, link: Color) -> some View {
+    private func bubble(fill: Color, text: Color, link: Color, isCustomer: Bool) -> some View {
         Text(Self.markdown(message.content))
+            .font(.body)
             .foregroundColor(text)
             .tint(link)
             .padding(.horizontal, 14).padding(.vertical, 10)
-            .background(RoundedRectangle(cornerRadius: 18).fill(fill))
+            .background(BubbleShape(isCustomer: isCustomer, isLast: isLastInGroup).fill(fill))
             .textSelection(.enabled)
     }
 
@@ -73,16 +104,16 @@ struct MessageRow: View {
     @ViewBuilder
     private var images: some View {
         if let data = message.localImage, let image = UIImage(data: data) {
-            Image(uiImage: image).resizable().scaledToFit().frame(maxWidth: 220).clipShape(RoundedRectangle(cornerRadius: 14))
+            Image(uiImage: image).resizable().scaledToFit().frame(maxWidth: 230).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         } else {
             ForEach(message.attachments.filter(\.isImage), id: \.self) { attachment in
                 if let url = URL(string: attachment.url) {
                     Link(destination: url) {
                         AsyncImage(url: url) { image in image.resizable().scaledToFit() } placeholder: {
-                            RoundedRectangle(cornerRadius: 14).fill(palette.surface).frame(width: 200, height: 150)
+                            RoundedRectangle(cornerRadius: 16, style: .continuous).fill(palette.surface).frame(width: 220, height: 160)
                         }
-                        .frame(maxWidth: 220)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .frame(maxWidth: 230)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
                 }
             }
@@ -94,11 +125,13 @@ struct MessageRow: View {
         ForEach(message.attachments.filter { !$0.isImage }, id: \.self) { attachment in
             if let url = URL(string: attachment.url) {
                 Link(destination: url) {
-                    Label(attachment.name ?? url.lastPathComponent, systemImage: "doc")
-                        .font(.subheadline)
-                        .padding(10)
-                        .foregroundColor(palette.link)
-                        .background(RoundedRectangle(cornerRadius: 12).stroke(palette.border))
+                    HStack(spacing: 10) {
+                        Image(systemName: "doc.fill").foregroundColor(palette.primary)
+                        Text(attachment.name ?? url.lastPathComponent).font(.subheadline).foregroundColor(palette.text).lineLimit(1)
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 10)
+                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(palette.surface))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border))
                 }
             }
         }
@@ -144,7 +177,7 @@ struct MessageRow: View {
     }
 
     private var feedback: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 10) {
             Button { onFeedback(true) } label: {
                 Image(systemName: message.feedback == "up" ? "hand.thumbsup.fill" : "hand.thumbsup")
             }
@@ -152,9 +185,36 @@ struct MessageRow: View {
                 Image(systemName: message.feedback == "down" ? "hand.thumbsdown.fill" : "hand.thumbsdown")
             }
         }
-        .font(.caption)
+        .font(.caption2)
         .foregroundColor(palette.textSecondary)
         .disabled(message.feedback != nil)
+    }
+}
+
+/// A message bubble: fully rounded, except a tighter corner where it points
+/// at its sender on the last message of a group.
+struct BubbleShape: Shape {
+    let isCustomer: Bool
+    let isLast: Bool
+
+    func path(in rect: CGRect) -> Path {
+        let big: CGFloat = 18
+        let small: CGFloat = isLast ? 5 : big
+        let tl = isCustomer ? big : (isLast ? small : big)
+        let tr = isCustomer ? (isLast ? small : big) : big
+        let bl = isCustomer ? big : small
+        let br = isCustomer ? small : big
+        return Path { p in
+            p.move(to: CGPoint(x: rect.minX + tl, y: rect.minY))
+            p.addLine(to: CGPoint(x: rect.maxX - tr, y: rect.minY))
+            p.addArc(tangent1End: CGPoint(x: rect.maxX, y: rect.minY), tangent2End: CGPoint(x: rect.maxX, y: rect.minY + tr), radius: tr)
+            p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - br))
+            p.addArc(tangent1End: CGPoint(x: rect.maxX, y: rect.maxY), tangent2End: CGPoint(x: rect.maxX - br, y: rect.maxY), radius: br)
+            p.addLine(to: CGPoint(x: rect.minX + bl, y: rect.maxY))
+            p.addArc(tangent1End: CGPoint(x: rect.minX, y: rect.maxY), tangent2End: CGPoint(x: rect.minX, y: rect.maxY - bl), radius: bl)
+            p.addLine(to: CGPoint(x: rect.minX, y: rect.minY + tl))
+            p.addArc(tangent1End: CGPoint(x: rect.minX, y: rect.minY), tangent2End: CGPoint(x: rect.minX + tl, y: rect.minY), radius: tl)
+        }
     }
 }
 

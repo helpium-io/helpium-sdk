@@ -4,7 +4,7 @@ import Foundation
 /// replicate". The SwiftUI views only render it and call its actions.
 @MainActor
 final class ChatStore: ObservableObject {
-    enum Screen: Equatable { case loading, home, thread, unavailable, failed }
+    enum Screen: Equatable { case loading, thread, unavailable, failed }
 
     struct Identity: Equatable {
         var userJwt: String?
@@ -30,8 +30,8 @@ final class ChatStore: ObservableObject {
         }
     }
 
-    @Published private(set) var screen: Screen = .loading
-    @Published private(set) var settings: WidgetSettings?
+    @Published var screen: Screen = .loading
+    @Published var settings: WidgetSettings?
     @Published private(set) var messages: [ChatMessage] = []
     @Published private(set) var status: String?
     @Published private(set) var agent: Agent?
@@ -91,7 +91,8 @@ final class ChatStore: ObservableObject {
 
     var showHandoffButton: Bool {
         guard let settings, settings.humanHandoffMode != "disabled", !handoffRequested, !isClosed else { return false }
-        guard let last = messages.last(where: { $0.role == .bot }) else { return false }
+        // Right under the bot answer that suggested it, not after anything newer.
+        guard let last = messages.last(where: { $0.role != .system }), last.role == .bot else { return false }
         return last.shouldHandoff
     }
 
@@ -128,7 +129,7 @@ final class ChatStore: ObservableObject {
             await resume(token: token)
         }
 
-        screen = hasConversation || showRating ? .thread : .home
+        screen = .thread
     }
 
     func reload() async {
@@ -215,7 +216,7 @@ final class ChatStore: ObservableObject {
         forgetConversationLocally()
         identity = Identity()
         customerIdentified = false
-        screen = settings == nil ? .loading : .home
+        screen = settings == nil ? .loading : .thread
     }
 
     /// Drops the conversation from memory without forgetting its token, so the
@@ -261,11 +262,6 @@ final class ChatStore: ObservableObject {
     func openThread() {
         screen = .thread
         markAllSeen()
-    }
-
-    func goHome() {
-        if isClosed && !showRating { forgetConversation() }
-        screen = .home
     }
 
     func startNewConversation() {
@@ -385,13 +381,13 @@ final class ChatStore: ObservableObject {
         Task {
             try? await api.rate(token: token, rating: rating, comment: comment)
             forgetConversation()
-            screen = .home
+            screen = .thread
         }
     }
 
     func skipRating() {
         forgetConversation()
-        screen = .home
+        screen = .thread
     }
 
     func feedback(messageId: Int, up: Bool) {

@@ -57,3 +57,26 @@ struct Avatar: View {
         }
     }
 }
+
+extension View {
+    /// A navigation bar in the header colors (used by sheets). iOS 16+ paints its background.
+    @ViewBuilder
+    func headerStyle(_ palette: Palette) -> some View {
+        if #available(iOS 16.0, *) {
+            self.toolbarBackground(palette.headerBackground, for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
+                .toolbarColorScheme(palette.headerIsDark ? .dark : .light, for: .navigationBar)
+        } else {
+            self
+        }
+    }
+
+    /// The navigation title in the header text color.
+    func headerTitle(_ title: String, _ palette: Palette) -> some View {
+        toolbar {
+            ToolbarItem(placement: .principal) {
+                Text(title).font(.headline).foregroundColor(palette.headerText)
+            }
+        }
+    }
+}

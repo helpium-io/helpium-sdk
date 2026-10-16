@@ -42,6 +42,17 @@ Helpium.present(activity);                        // from your Help button
 
 That's it. The widget key is in your Helpium dashboard under **Channels → Live Chat**.
 
+**What the customer sees.** One chat screen, like the Helpium web widget:
+- With an open conversation, the chat opens straight into it.
+- Without one, it shows your greeting, a short welcome and your instant answers, with the message field ready.
+
+Step-by-step guides with screenshots are in the Helpium help center:
+- [iOS](https://docs.helpium.io/help-center/mobile-sdk-ios)
+- [Android](https://docs.helpium.io/help-center/mobile-sdk-android)
+- [React Native](https://docs.helpium.io/help-center/mobile-sdk-react-native)
+- [Push notifications](https://docs.helpium.io/help-center/mobile-sdk-push-notifications)
+- [Identity verification](https://docs.helpium.io/help-center/identity-verification)
+
 ---
 
 ## Features
@@ -80,7 +91,7 @@ Conversations from your app land in the same Helpium inbox as web chat, email an
 7. [Customization](#7-customization)
 8. [Troubleshooting](#8-troubleshooting)
 9. [How it works](#9-how-it-works)
-10. [Contributing and releasing](#10-contributing-and-releasing)
+10. [Example apps and contributing](#10-example-apps-and-contributing)
 
 ---
 
@@ -551,6 +562,7 @@ On Android 13+ request the `POST_NOTIFICATIONS` runtime permission, as for any n
 | `isHelpiumPush(data \| extras)` · `shouldShowNotification(data)` · `handlePush(context, data \| extras)` | Push handling |
 | `setAppearance(appearance)` | Every color, for light and dark mode ([Customization](#7-customization)) |
 | `setLocale(code)` | `"en"`, `"es"`, or `null` to follow the phone. Call before `configure` |
+| `setHttpClient(okHttpClient)` | Advanced: your own OkHttp client (corporate proxy, certificate pinning, a local test server). Call before `configure` |
 
 ---
 
@@ -784,7 +796,7 @@ Helpium.configure({ widgetKey: 'YOUR_WIDGET_KEY', appearance: { light: { primary
 
 ### Language and texts
 
-**Language.** The chat follows the phone language (English and Spanish included). To force one:
+The chat follows the phone language (English and Spanish built in). To force one:
 
 ```swift
 Helpium.setLocale("es")   // iOS
@@ -793,33 +805,39 @@ Helpium.setLocale("es")   // iOS
 Helpium.setLocale("es");  // Android, before configure
 ```
 
-**Texts.** Override any text.
+**Every text can be replaced, per language**, with the same keys on both platforms. That includes the greeting, the welcome text and the placeholder, so you can match your app's voice or add a language Helpium doesn't ship.
 
-iOS:
-```swift
-Helpium.setString("Need help?", for: "welcome_title")
-```
-
-Android: define a string resource with the same name in your app. Your value wins.
+Android: define the string resources in your app. Your values win, and Android picks the right language folder.
 ```xml
 <!-- res/values/strings.xml -->
-<string name="helpium_welcome_title">Need help?</string>
+<string name="helpium_greeting">Hi! Need a hand with your order?</string>
 <!-- res/values-es/strings.xml -->
-<string name="helpium_welcome_title">¿Necesitas ayuda?</string>
+<string name="helpium_greeting">¡Hola! ¿Te ayudamos con tu pedido?</string>
+<!-- res/values-pt/strings.xml -->
+<string name="helpium_greeting">Olá! Precisa de ajuda com o seu pedido?</string>
 ```
 
-| Key (Android: `helpium_` + key) | Default |
-|---|---|
-| `title` | Support |
-| `welcome_title` | Hi there 👋 |
-| `welcome_subtitle` | Ask us anything. We usually answer in a few minutes. |
-| `new_conversation` | Send us a message |
-| `continue_conversation` | Continue your conversation |
-| `placeholder` | Write a message... |
-| `talk_to_human` | Talk to a human |
-| `offline` | We are away right now. Leave a message and we will get back to you. |
-| `prechat_title` | Before we start |
-| `rate_title` | How was your conversation? |
+iOS: add the same keys to your app's `Localizable.strings` for each language. The SDK reads them for the chat language.
+```
+/* en.lproj/Localizable.strings */
+"helpium_greeting" = "Hi! Need a hand with your order?";
+/* pt.lproj/Localizable.strings */
+"helpium_greeting" = "Olá! Precisa de ajuda com o seu pedido?";
+```
+Or set one from code for the current language: `Helpium.setString("Hi!", for: "greeting")`.
+
+| Key (prefix `helpium_` in resources) | Default (en) | Web widget equivalent |
+|---|---|---|
+| `greeting` | Hi! How can I help you today? | `data-helpium-greeting` |
+| `welcome_title` | How can we help? | `data-helpium-welcome-title` |
+| `welcome_subtitle` | Type your question below and we'll find relevant articles or connect you with support. | `data-helpium-welcome-subtitle` |
+| `welcome_subtitle_team` | Send us a message and our team will get back to you shortly. (when the AI is off) | |
+| `placeholder` | Type your message... | |
+| `reply_time` | We typically reply within a few minutes | |
+| `waiting_for_agent` | Waiting for agent | |
+| `instant_answers` | Instant answers | |
+| `talk_to_human` | Talk to a human | |
+| `rate_title` | How was your conversation? | |
 
 The full list is in [`Strings.swift`](ios/Sources/Helpium/Core/Strings.swift) and [`strings.xml`](android/helpium/src/main/res/values/strings.xml).
 
@@ -905,9 +923,48 @@ helpium-sdk/
 
 ---
 
-## 10. Contributing and releasing
+## 10. Example apps and contributing
 
-Run the tests:
+### Try it in a simulator
+
+Both example apps have a **Chat with support** button, a color theme switcher, identify and log out, so you can try the SDK against your workspace.
+
+**iOS**: open `ios/Example/HelpiumExample.xcodeproj` in Xcode and run it, then paste your widget key in the app. From the terminal:
+
+```bash
+ios/Example/run-simulator.sh wk_YOUR_KEY https://helpium.io
+```
+
+**Android**: put your key in `android/local.properties`, then build and install the Java example:
+
+```properties
+helpium.widgetKey=wk_YOUR_KEY
+helpium.baseUrl=https://helpium.io
+```
+
+```bash
+cd android && ./gradlew :example:installDebug
+```
+
+<details>
+<summary>Testing against a local Helpium (Herd or Valet)</summary>
+
+- **iOS simulator:** trust the local certificate authority once:
+  ```bash
+  xcrun simctl keychain booted add-root-cert "$HOME/Library/Application Support/Herd/config/valet/CA/LaravelValetCASelfSigned.pem"
+  ```
+- **Android emulator:** add these to `local.properties`. The example then resolves the host to your Mac and trusts the certificate:
+  ```properties
+  helpium.baseUrl=https://helpium.test
+  helpium.localHost=helpium.test
+  helpium.localCa=/Users/you/Library/Application Support/Herd/config/valet/CA/LaravelValetCASelfSigned.pem
+  ```
+- **Sample conversation:** both examples can open one for design review, without sending messages:
+  - Android: `adb shell am start -n io.helpium.example/.MainActivity -e demo thread`
+  - iOS: launch with `HELPIUM_DEMO=thread`
+</details>
+
+### Run the tests
 
 ```bash
 # iOS (from the repository root)
