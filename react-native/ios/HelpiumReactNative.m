@@ -4,6 +4,7 @@
 @interface RCT_EXTERN_MODULE(HelpiumReactNative, RCTEventEmitter)
 
 RCT_EXTERN_METHOD(configure:(NSString *)widgetKey baseUrl:(NSString *)baseUrl)
+RCT_EXTERN_METHOD(setAppearance:(NSDictionary *)appearance)
 RCT_EXTERN_METHOD(identify:(NSString *)userJwt email:(NSString *)email name:(NSString *)name)
 RCT_EXTERN_METHOD(identifyByEmail:(NSString *)email name:(NSString *)name)
 RCT_EXTERN_METHOD(logout)

@@ -51,6 +51,11 @@ class HelpiumActivity : Activity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        when (Helpium.store?.appearance?.colorScheme) {
+            HelpiumColorScheme.LIGHT -> setTheme(R.style.Helpium_Theme_Light)
+            HelpiumColorScheme.DARK -> setTheme(R.style.Helpium_Theme_Dark)
+            else -> Unit
+        }
         super.onCreate(savedInstanceState)
         val current = Helpium.store
         if (current == null) {
@@ -60,8 +65,11 @@ class HelpiumActivity : Activity() {
         store = current
 
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(topBar())
-        root.addView(divider())
+        palette = resolvePalette()
+        bar = topBar()
+        root.addView(bar)
+        headerDivider = divider()
+        root.addView(headerDivider)
         content = FrameLayout(this)
         root.addView(content, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         setContentView(root)
@@ -93,11 +101,43 @@ class HelpiumActivity : Activity() {
 
     // region Chrome
 
-    private val accent get() = parseColor(store.settings?.primaryColor)
-    private val onAccent get() = contrasting(accent)
-    private fun color(id: Int) = resources.getColor(id, theme)
+    private lateinit var palette: Palette
+    private lateinit var bar: LinearLayout
+    private lateinit var headerDivider: View
+    private lateinit var closeButton: ImageButton
 
-    private fun topBar(): View {
+    private val accent get() = palette.primary
+    private val onAccent get() = palette.onPrimary
+
+    private fun resolvePalette(): Palette {
+        val dark = when (store.appearance.colorScheme) {
+            HelpiumColorScheme.LIGHT -> false
+            HelpiumColorScheme.DARK -> true
+            HelpiumColorScheme.SYSTEM -> (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+        }
+        return Palette.resolve(store.appearance, store.settings?.primaryColor, dark)
+    }
+
+    /** Window, status bar and top bar in the header colors. */
+    @Suppress("DEPRECATION")
+    private fun applyChrome() {
+        window.decorView.setBackgroundColor(palette.background)
+        window.statusBarColor = palette.headerBackground
+        if (android.os.Build.VERSION.SDK_INT >= 23) {
+            val flags = window.decorView.systemUiVisibility
+            window.decorView.systemUiVisibility = if (palette.headerIsDark) {
+                flags and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
+            } else {
+                flags or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+            }
+        }
+        bar.setBackgroundColor(palette.headerBackground)
+        headerDivider.setBackgroundColor(palette.border)
+        titleView.setTextColor(palette.headerText)
+        listOf(backButton, moreButton, closeButton).forEach { it.imageTintList = ColorStateList.valueOf(palette.headerText) }
+    }
+
+    private fun topBar(): LinearLayout {
         val bar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -108,20 +148,28 @@ class HelpiumActivity : Activity() {
         titleView = TextView(this).apply {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
             typeface = Typeface.DEFAULT_BOLD
-            setTextColor(color(R.color.helpium_text))
             setPadding(dp(8), 0, dp(8), 0)
             maxLines = 1
         }
         moreButton = iconButton(R.drawable.helpium_ic_more, R.string.helpium_more) { confirmClose() }
-        val close = iconButton(R.drawable.helpium_ic_close, R.string.helpium_close) { finish() }
+        closeButton = iconButton(R.drawable.helpium_ic_close, R.string.helpium_close) { finish() }
         bar.addView(backButton)
         bar.addView(titleView, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         bar.addView(moreButton)
-        bar.addView(close)
+        bar.addView(closeButton)
         return bar
     }
 
     private fun render() {
+        val fresh = resolvePalette()
+        if (fresh != palette) {
+            // New colors: rebuild every view with them.
+            palette = fresh
+            thread = null
+            content.removeAllViews()
+        }
+        applyChrome()
+
         val screen = store.screen
         backButton.visibility = if (screen == ChatStore.Screen.THREAD) View.VISIBLE else View.GONE
         moreButton.visibility = if (screen == ChatStore.Screen.THREAD && store.hasConversation && !store.isClosed) View.VISIBLE else View.GONE
@@ -168,7 +216,7 @@ class HelpiumActivity : Activity() {
             text = getString(R.string.helpium_welcome_title)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 28f)
             typeface = Typeface.DEFAULT_BOLD
-            setTextColor(color(R.color.helpium_text))
+            setTextColor(palette.text)
         })
         column.addView(secondaryText(getString(R.string.helpium_welcome_subtitle)).apply { setPadding(0, dp(6), 0, 0) })
         if (settings?.isOnline == false) {
@@ -176,10 +224,31 @@ class HelpiumActivity : Activity() {
         }
 
         val label = getString(if (store.hasConversation) R.string.helpium_continue_conversation else R.string.helpium_new_conversation)
-        val unread = if (store.unreadCount > 0) "  (${store.unreadCount})" else ""
-        column.addView(primaryButton(label + unread) {
-            if (store.hasConversation) store.openThread() else store.startNewConversation()
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)).apply { topMargin = dp(24) })
+        val start = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(18), 0, dp(18), 0)
+            background = RippleDrawable(ColorStateList.valueOf(0x33000000), rounded(palette.primary, dp(14).toFloat()), null)
+            isClickable = true
+            setOnClickListener { if (store.hasConversation) store.openThread() else store.startNewConversation() }
+            addView(TextView(this@HelpiumActivity).apply {
+                text = label
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(palette.onPrimary)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            if (store.unreadCount > 0) {
+                addView(TextView(this@HelpiumActivity).apply {
+                    text = store.unreadCount.toString()
+                    typeface = Typeface.DEFAULT_BOLD
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                    setTextColor(palette.unreadBadgeText)
+                    setPadding(dp(7), dp(2), dp(7), dp(2))
+                    background = rounded(palette.unreadBadge, dp(10).toFloat())
+                })
+            }
+        }
+        column.addView(start, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)).apply { topMargin = dp(24) })
 
         if (!store.hasConversation) {
             settings?.instantAnswers?.forEach { answer ->
@@ -267,13 +336,13 @@ class HelpiumActivity : Activity() {
             }
             val attach = iconButton(R.drawable.helpium_ic_attach, R.string.helpium_attach_image) {
                 if (!store.needsPrechat) pickImage()
-            }
+            }.apply { imageTintList = ColorStateList.valueOf(palette.textSecondary) }
             val field = EditText(this@HelpiumActivity).apply {
                 hint = getString(R.string.helpium_placeholder)
-                background = rounded(color(R.color.helpium_surface), dp(20).toFloat())
+                background = rounded(palette.inputBackground, dp(20).toFloat())
                 setPadding(dp(14), dp(10), dp(14), dp(10))
-                setTextColor(color(R.color.helpium_text))
-                setHintTextColor(color(R.color.helpium_text_secondary))
+                setTextColor(palette.inputText)
+                setHintTextColor(palette.textSecondary)
                 maxLines = 5
                 inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or InputType.TYPE_TEXT_FLAG_MULTI_LINE
                 imeOptions = EditorInfo.IME_ACTION_SEND
@@ -325,7 +394,7 @@ class HelpiumActivity : Activity() {
             column.addView(TextView(this@HelpiumActivity).apply {
                 text = getString(R.string.helpium_rate_title)
                 typeface = Typeface.DEFAULT_BOLD
-                setTextColor(color(R.color.helpium_text))
+                setTextColor(palette.text)
             })
             val faces = listOf("😞", "😐", "🙂", "😀", "🤩")
             val labels = listOf(R.string.helpium_rating_1, R.string.helpium_rating_2, R.string.helpium_rating_3, R.string.helpium_rating_4, R.string.helpium_rating_5)
@@ -406,7 +475,7 @@ class HelpiumActivity : Activity() {
             row.gravity = Gravity.END
             column.gravity = Gravity.END
             images(message, column, maxWidth)
-            if (message.content.isNotEmpty()) column.addView(bubble(message.content, accent, onAccent, maxWidth))
+            if (message.content.isNotEmpty()) column.addView(bubble(message.content, palette.customerBubble, palette.customerBubbleText, maxWidth, palette.customerBubbleText))
             column.alpha = if (message.isPending) 0.6f else 1f
             row.addView(column)
             return row
@@ -419,7 +488,7 @@ class HelpiumActivity : Activity() {
         column.setPadding(dp(8), 0, 0, 0)
         column.addView(secondaryText(name).apply { setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f) })
         images(message, column, maxWidth)
-        if (message.content.isNotEmpty()) column.addView(bubble(message.content, color(R.color.helpium_surface), color(R.color.helpium_text), maxWidth))
+        if (message.content.isNotEmpty()) column.addView(bubble(message.content, palette.agentBubble, palette.agentBubbleText, maxWidth, palette.link))
 
         message.attachments.filterNot { it.isImage }.forEach { file ->
             column.addView(textButton("📄 " + (file.name ?: Uri.parse(file.url).lastPathSegment.orEmpty())) { openUrl(file.url) })
@@ -488,7 +557,7 @@ class HelpiumActivity : Activity() {
         this.maxWidth = minOf(maxWidth, dp(240))
         scaleType = ImageView.ScaleType.FIT_START
         clipToOutline = true
-        background = rounded(color(R.color.helpium_surface), dp(14).toFloat())
+        background = rounded(palette.surface, dp(14).toFloat())
         setPadding(0, dp(2), 0, dp(2))
     }
 
@@ -497,7 +566,8 @@ class HelpiumActivity : Activity() {
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.BOTTOM; setPadding(0, dp(5), 0, dp(5)) }
         row.addView(avatar(if (isBot) store.settings?.botAvatarUrl else store.agent?.avatarUrl, if (isBot) store.settings?.botName.orEmpty() else store.agent?.name.orEmpty()))
         val text = if (isBot && store.botTypingStatus != null) store.botTypingStatus!! else "• • •"
-        row.addView(bubble(text, color(R.color.helpium_surface), color(R.color.helpium_text_secondary), dp(260)).apply {
+        row.addView(bubble(text, palette.agentBubble, palette.agentBubbleText, dp(260), palette.link).apply {
+            alpha = 0.85f
             contentDescription = getString(R.string.helpium_typing)
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { leftMargin = dp(8) })
         return row
@@ -576,10 +646,10 @@ class HelpiumActivity : Activity() {
         stroke?.let { setStroke(dp(1), it) }
     }
 
-    private fun bubble(text: String, fill: Int, textColor: Int, maxWidth: Int) = TextView(this).apply {
+    private fun bubble(text: String, fill: Int, textColor: Int, maxWidth: Int, linkColor: Int) = TextView(this).apply {
         this.text = Markdown.render(text)
         setTextColor(textColor)
-        setLinkTextColor(if (fill == accent) textColor else accent)
+        setLinkTextColor(linkColor)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
         setTextIsSelectable(true)
         Linkify.addLinks(this, Linkify.WEB_URLS or Linkify.EMAIL_ADDRESSES)
@@ -591,11 +661,11 @@ class HelpiumActivity : Activity() {
 
     private fun avatar(url: String?, name: String): View {
         val size = dp(28)
-        val frame = FrameLayout(this).apply { background = rounded(color(R.color.helpium_surface), size / 2f); clipToOutline = true }
+        val frame = FrameLayout(this).apply { background = rounded(palette.surface, size / 2f); clipToOutline = true }
         frame.addView(TextView(this).apply {
             text = name.take(1).uppercase()
             gravity = Gravity.CENTER
-            setTextColor(color(R.color.helpium_text_secondary))
+            setTextColor(palette.textSecondary)
             typeface = Typeface.DEFAULT_BOLD
         }, FrameLayout.LayoutParams(size, size))
         if (url != null) {
@@ -607,7 +677,7 @@ class HelpiumActivity : Activity() {
 
     private fun secondaryText(value: String) = TextView(this).apply {
         text = value
-        setTextColor(color(R.color.helpium_text_secondary))
+        setTextColor(palette.textSecondary)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
     }
 
@@ -634,10 +704,10 @@ class HelpiumActivity : Activity() {
 
     private fun outlinedRow(label: String, onClick: () -> Unit) = TextView(this).apply {
         text = label
-        setTextColor(color(R.color.helpium_text))
+        setTextColor(palette.text)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
         setPadding(dp(16), dp(14), dp(16), dp(14))
-        background = RippleDrawable(ColorStateList.valueOf(0x22000000), rounded(Color.TRANSPARENT, dp(12).toFloat(), color(R.color.helpium_divider)), null)
+        background = RippleDrawable(ColorStateList.valueOf(0x22000000), rounded(palette.surface, dp(12).toFloat(), palette.border), null)
         setOnClickListener { onClick() }
     }
 
@@ -650,7 +720,7 @@ class HelpiumActivity : Activity() {
 
     private fun iconButton(icon: Int, description: Int, onClick: () -> Unit) = ImageButton(this).apply {
         setImageResource(icon)
-        imageTintList = ColorStateList.valueOf(color(R.color.helpium_text))
+        imageTintList = ColorStateList.valueOf(palette.headerText)
         background = null
         contentDescription = getString(description)
         layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
@@ -658,7 +728,7 @@ class HelpiumActivity : Activity() {
     }
 
     private fun divider() = View(this).apply {
-        setBackgroundColor(color(R.color.helpium_divider))
+        setBackgroundColor(palette.border)
         layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1).coerceAtLeast(1))
     }
 
@@ -675,12 +745,5 @@ class HelpiumActivity : Activity() {
 
     companion object {
         private const val PICK_IMAGE = 4210
-
-        internal fun parseColor(hex: String?): Int = runCatching { Color.parseColor(hex ?: "#6366f1") }.getOrDefault(Color.parseColor("#6366f1"))
-
-        internal fun contrasting(color: Int): Int {
-            val luminance = (0.299 * Color.red(color) + 0.587 * Color.green(color) + 0.114 * Color.blue(color)) / 255
-            return if (luminance > 0.6) Color.BLACK else Color.WHITE
-        }
     }
 }

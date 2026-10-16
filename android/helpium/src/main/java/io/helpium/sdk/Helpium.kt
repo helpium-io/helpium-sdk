@@ -25,6 +25,7 @@ object Helpium {
 
     internal var store: ChatStore? = null
         private set
+    private var appearance = HelpiumAppearance()
     private val unreadListeners = linkedSetOf<UnreadCountListener>()
     private val main = Handler(Looper.getMainLooper())
 
@@ -34,6 +35,7 @@ object Helpium {
     fun configure(context: Context, widgetKey: String, baseUrl: String = "https://helpium.io") {
         val store = ChatStore(context, Api(baseUrl, widgetKey))
         store.explicitLocale = Strings.forcedLocale
+        store.appearance = appearance
         store.onUnreadCountChange = { count -> unreadListeners.toList().forEach { it.onUnreadCountChanged(count) } }
         this.store = store
         store.start()
@@ -67,6 +69,22 @@ object Helpium {
     fun setLocale(code: String?) {
         Strings.forcedLocale = code
         store?.explicitLocale = code
+    }
+
+    /**
+     * Every color of the chat, for light and dark mode. Call before or after
+     * `configure`; it applies right away, even while the chat is open.
+     *
+     * ```java
+     * Helpium.setAppearance(new HelpiumAppearance()
+     *     .light(new HelpiumColors().primary("#0ea5e9").background("#ffffff").agentBubble("#f1f5f9"))
+     *     .dark(new HelpiumColors().primary("#38bdf8").background("#0f172a").agentBubble("#1e293b")));
+     * ```
+     */
+    @JvmStatic
+    fun setAppearance(appearance: HelpiumAppearance) = onMain {
+        this.appearance = appearance
+        store?.appearance = appearance
     }
 
     /** Opens the chat. */

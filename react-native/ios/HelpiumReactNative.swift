@@ -33,6 +33,29 @@ final class HelpiumReactNative: RCTEventEmitter {
         }
     }
 
+    @objc func setAppearance(_ appearance: NSDictionary) {
+        let value = Self.appearance(from: appearance)
+        onMain { Helpium.setAppearance(value) }
+    }
+
+    static func appearance(from raw: NSDictionary) -> HelpiumAppearance {
+        func colors(_ key: String) -> HelpiumColors {
+            let c = raw[key] as? [String: Any] ?? [:]
+            func v(_ name: String) -> String? { c[name] as? String }
+            return HelpiumColors(
+                primary: v("primary"), onPrimary: v("onPrimary"), background: v("background"), surface: v("surface"),
+                text: v("text"), textSecondary: v("textSecondary"), border: v("border"),
+                headerBackground: v("headerBackground"), headerText: v("headerText"),
+                customerBubble: v("customerBubble"), customerBubbleText: v("customerBubbleText"),
+                agentBubble: v("agentBubble"), agentBubbleText: v("agentBubbleText"),
+                inputBackground: v("inputBackground"), inputText: v("inputText"), link: v("link"),
+                unreadBadge: v("unreadBadge"), unreadBadgeText: v("unreadBadgeText")
+            )
+        }
+        let scheme = HelpiumColorScheme(rawValue: raw["colorScheme"] as? String ?? "system") ?? .system
+        return HelpiumAppearance(light: colors("light"), dark: colors("dark"), colorScheme: scheme)
+    }
+
     @objc func identify(_ userJwt: String, email: String?, name: String?) {
         onMain { Helpium.identify(userJwt: userJwt, email: email, name: name) }
     }

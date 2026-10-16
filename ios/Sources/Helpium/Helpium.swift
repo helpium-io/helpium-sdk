@@ -14,12 +14,16 @@ public enum Helpium {
     private static var unreadListeners: [UUID: (Int) -> Void] = [:]
     private static weak var presented: UIViewController?
     private static var forcedLocale: String?
+    private static var appearance = HelpiumAppearance()
 
     /// Call once at launch with the workspace's widget key (Helpium > Channels > Live Chat).
-    public static func configure(widgetKey: String, baseURL: URL = URL(string: "https://helpium.io")!) {
+    /// Pass `appearance` to set every color of the chat (or call `setAppearance` later).
+    public static func configure(widgetKey: String, baseURL: URL = URL(string: "https://helpium.io")!, appearance: HelpiumAppearance? = nil) {
         L.locale = forcedLocale ?? preferredLocale()
+        if let appearance { Self.appearance = appearance }
         let store = ChatStore(api: APIClient(baseURL: baseURL, widgetKey: widgetKey))
         store.setLocale(forcedLocale)
+        store.appearance = Self.appearance
         store.onUnreadCountChange = { count in unreadListeners.values.forEach { $0(count) } }
         Self.store = store
         Task { await store.start() }
@@ -47,6 +51,19 @@ public enum Helpium {
         forcedLocale = code
         L.locale = code ?? preferredLocale()
         store?.setLocale(code)
+    }
+
+    /// Every color of the chat, for light and dark mode. Applies right away, even while the chat is open.
+    ///
+    /// ```swift
+    /// Helpium.setAppearance(.init(
+    ///     light: .init(primary: "#0ea5e9", background: "#ffffff", agentBubble: "#f1f5f9"),
+    ///     dark: .init(primary: "#38bdf8", background: "#0f172a", agentBubble: "#1e293b")
+    /// ))
+    /// ```
+    public static func setAppearance(_ appearance: HelpiumAppearance) {
+        Self.appearance = appearance
+        store?.appearance = appearance
     }
 
     /// Replaces one of the chat's texts, e.g. `setString("Help", for: "title")`.

@@ -42,6 +42,9 @@ internal class ChatStore(context: Context, val api: Api) {
     var unreadCount = 0; private set
     var notice: String? = null
 
+    var appearance = HelpiumAppearance()
+        set(value) { field = value; changed() }
+
     /** Set by the chat screen: while visible, team messages count as seen. */
     var isVisible = false
         set(value) { field = value; if (value) markAllSeen() }

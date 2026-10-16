@@ -2,6 +2,7 @@ import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
 
 type NativeHelpium = {
     configure(widgetKey: string, baseUrl: string | null): void;
+    setAppearance(appearance: HelpiumAppearance): void;
     identify(userJwt: string, email: string | null, name: string | null): void;
     identifyByEmail(email: string, name: string | null): void;
     logout(): void;
@@ -39,17 +40,88 @@ function stringify(data: Record<string, unknown> | null | undefined): Record<str
     return out;
 }
 
+/**
+ * Every color of the chat, as hex strings ('#0ea5e9', '#RRGGBBAA' for
+ * transparency). Leave one out to keep its default: the workspace brand color
+ * for `primary`, neutral light or dark tones for the rest.
+ */
+export type HelpiumColors = {
+    /** Buttons, links and the send button. Default: the workspace color. */
+    primary?: string;
+    /** Text and icons on `primary`. Default: black or white, whichever reads better. */
+    onPrimary?: string;
+    /** The screen behind everything. */
+    background?: string;
+    /** Cards, menus and secondary surfaces. */
+    surface?: string;
+    /** Main text. */
+    text?: string;
+    /** Captions, sender names, system messages and placeholders. */
+    textSecondary?: string;
+    /** Borders and dividers. */
+    border?: string;
+    /** The top bar. Default: `background`. */
+    headerBackground?: string;
+    /** The top bar title and icons. Default: `text`. */
+    headerText?: string;
+    /** The customer's own messages. Default: `primary`. */
+    customerBubble?: string;
+    /** Text in the customer's messages. Default: `onPrimary`. */
+    customerBubbleText?: string;
+    /** Messages from the bot and agents. Default: `surface`. */
+    agentBubble?: string;
+    /** Text in bot and agent messages. Default: `text`. */
+    agentBubbleText?: string;
+    /** The message field. Default: `surface`. */
+    inputBackground?: string;
+    /** Text typed in the message field. Default: `text`. */
+    inputText?: string;
+    /** Links inside messages. Default: `primary`. */
+    link?: string;
+    /** The unread count badge. Default: red. */
+    unreadBadge?: string;
+    /** The number on the unread badge. Default: white. */
+    unreadBadgeText?: string;
+};
+
+export type HelpiumAppearance = {
+    /** Colors in light mode. */
+    light?: HelpiumColors;
+    /** Colors in dark mode. */
+    dark?: HelpiumColors;
+    /** Follow the phone (default) or force one mode. */
+    colorScheme?: 'system' | 'light' | 'dark';
+};
+
 export type HelpiumConfig = {
     /** The workspace widget key, from Helpium > Channels > Live Chat. */
     widgetKey: string;
     /** Defaults to https://helpium.io. */
     baseUrl?: string;
+    /** Every color of the chat, for light and dark mode. */
+    appearance?: HelpiumAppearance;
 };
 
 export const Helpium = {
     /** Call once at startup. */
-    configure({ widgetKey, baseUrl }: HelpiumConfig): void {
+    configure({ widgetKey, baseUrl, appearance }: HelpiumConfig): void {
+        if (appearance) {
+            module().setAppearance(appearance);
+        }
         module().configure(widgetKey, baseUrl ?? null);
+    },
+
+    /**
+     * Every color of the chat, for light and dark mode. Applies right away,
+     * even while the chat is open.
+     *
+     *     Helpium.setAppearance({
+     *       light: { primary: '#0ea5e9', background: '#ffffff', agentBubble: '#f1f5f9' },
+     *       dark: { primary: '#38bdf8', background: '#0f172a', agentBubble: '#1e293b' },
+     *     });
+     */
+    setAppearance(appearance: HelpiumAppearance): void {
+        module().setAppearance(appearance);
     },
 
     /**

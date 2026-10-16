@@ -44,6 +44,7 @@ final class ChatStore: ObservableObject {
     @Published private(set) var customerIdentified = false
     @Published var notice: String?
     @Published private(set) var unreadCount = 0
+    @Published var appearance = HelpiumAppearance()
 
     var onUnreadCountChange: ((Int) -> Void)?
 

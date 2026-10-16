@@ -3,7 +3,7 @@ import UIKit
 
 struct ThreadView: View {
     @ObservedObject var store: ChatStore
-    let accent: Color
+    @Environment(\.palette) private var palette
 
     @State private var draft = ""
     @State private var confirmClose = false
@@ -13,13 +13,12 @@ struct ThreadView: View {
     var body: some View {
         VStack(spacing: 0) {
             messageList
-            Divider()
+            palette.border.frame(height: 1)
             footer
         }
-        .navigationTitle(title)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
-                Button { store.goHome() } label: { Image(systemName: "chevron.left") }
+                Button { store.goHome() } label: { Image(systemName: "chevron.left").foregroundColor(palette.headerText) }
             }
             ToolbarItem(placement: .principal) {
                 if store.hasConversation && !store.isClosed {
@@ -27,12 +26,12 @@ struct ThreadView: View {
                         Button(role: .destructive) { confirmClose = true } label: { Label(L.t("close_conversation"), systemImage: "checkmark.circle") }
                     } label: {
                         HStack(spacing: 4) {
-                            Text(title).font(.headline).foregroundColor(.primary)
-                            Image(systemName: "chevron.down").font(.caption2).foregroundColor(.secondary)
+                            Text(title).font(.headline).foregroundColor(palette.headerText)
+                            Image(systemName: "chevron.down").font(.caption2).foregroundColor(palette.headerText.opacity(0.6))
                         }
                     }
                 } else {
-                    Text(title).font(.headline)
+                    Text(title).font(.headline).foregroundColor(palette.headerText)
                 }
             }
         }
@@ -50,7 +49,7 @@ struct ThreadView: View {
             .ignoresSafeArea()
         }
         .sheet(isPresented: Binding(get: { prechatPending != nil }, set: { if !$0 { prechatPending = nil } })) {
-            PrechatView(collectOptIn: store.settings?.collectMarketingOptIn ?? false, accent: accent) { first, last, email, optIn in
+            PrechatView(collectOptIn: store.settings?.collectMarketingOptIn ?? false, palette: palette) { first, last, email, optIn in
                 store.submitPrechat(firstName: first, lastName: last, email: email, marketingOptIn: optIn)
                 if let text = prechatPending { store.send(text: text) }
                 prechatPending = nil
@@ -76,8 +75,6 @@ struct ThreadView: View {
                             isLatest: message.id == lastMessageId,
                             botName: store.settings?.botName ?? "",
                             botAvatar: store.settings?.botAvatarUrl,
-                            accent: accent,
-                            accentText: Color.contrasting(store.settings?.primaryColor ?? "#6366f1"),
                             interactionsEnabled: !store.isBotTyping && !store.isClosed,
                             onFeedback: { up in store.feedback(messageId: message.id, up: up) },
                             onRetry: { store.retry(messageId: message.id) },
@@ -88,7 +85,10 @@ struct ThreadView: View {
 
                     if store.showHandoffButton {
                         Button(L.t("talk_to_human")) { store.requestHuman() }
-                            .buttonStyle(.bordered)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(palette.primary)
+                            .padding(.horizontal, 14).padding(.vertical, 8)
+                            .overlay(Capsule().stroke(palette.primary))
                             .padding(.leading, 36)
                     }
 
@@ -118,11 +118,15 @@ struct ThreadView: View {
     @ViewBuilder
     private var footer: some View {
         if store.showRating {
-            RatingView(accent: accent) { rating, comment in store.rate(rating, comment: comment) } onSkip: { store.skipRating() }
+            RatingView { rating, comment in store.rate(rating, comment: comment) } onSkip: { store.skipRating() }
         } else if store.isClosed {
             VStack(spacing: 10) {
-                Text(closedText).font(.footnote).foregroundColor(.secondary)
-                Button(L.t("start_new")) { store.startNewConversation() }.buttonStyle(.borderedProminent)
+                Text(closedText).font(.footnote).foregroundColor(palette.textSecondary)
+                Button(L.t("start_new")) { store.startNewConversation() }
+                    .font(.body.weight(.semibold))
+                    .foregroundColor(palette.onPrimary)
+                    .padding(.horizontal, 18).padding(.vertical, 10)
+                    .background(Capsule().fill(palette.primary))
             }
             .padding()
         } else {
@@ -147,24 +151,32 @@ struct ThreadView: View {
                     Button { picker = .camera } label: { Label(L.t("camera"), systemImage: "camera") }
                 }
             } label: {
-                Image(systemName: "paperclip").font(.system(size: 20)).padding(8)
+                Image(systemName: "paperclip").font(.system(size: 20)).foregroundColor(palette.textSecondary).padding(8)
             }
             .disabled(store.needsPrechat)
 
-            TextField(L.t("placeholder"), text: $draft)
-                .textFieldStyle(.plain)
+            ZStack(alignment: .leading) {
+                if draft.isEmpty {
+                    Text(L.t("placeholder")).foregroundColor(palette.textSecondary).allowsHitTesting(false)
+                }
+                TextField("", text: $draft)
+                    .textFieldStyle(.plain)
+                    .foregroundColor(palette.inputText)
+            }
                 .padding(.horizontal, 12).padding(.vertical, 9)
-                .background(RoundedRectangle(cornerRadius: 18).fill(Color(.secondarySystemBackground)))
+                .background(RoundedRectangle(cornerRadius: 18).fill(palette.inputBackground))
+                .accessibilityLabel(L.t("placeholder"))
                 .onChange(of: draft) { value in if !value.isEmpty { store.customerTyping() } }
                 .onSubmit(send)
                 .submitLabel(.send)
 
             Button(action: send) {
-                Image(systemName: "arrow.up.circle.fill").font(.system(size: 30))
+                Image(systemName: "arrow.up.circle.fill").font(.system(size: 30)).foregroundColor(palette.primary)
             }
             .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.isBotTyping)
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
+        .background(palette.background)
     }
 
     private func send() {
@@ -189,23 +201,24 @@ struct TypingRow: View {
     let avatar: String?
     let name: String
     @State private var phase = 0.0
+    @Environment(\.palette) private var palette
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
             Avatar(url: avatar, fallback: name)
             HStack(spacing: 6) {
                 if let status {
-                    ProgressView().scaleEffect(0.7)
-                    Text(status).font(.footnote).foregroundColor(.secondary)
+                    ProgressView().scaleEffect(0.7).tint(palette.textSecondary)
+                    Text(status).font(.footnote).foregroundColor(palette.agentBubbleText.opacity(0.7))
                 } else {
                     ForEach(0..<3) { index in
-                        Circle().fill(Color.secondary).frame(width: 7, height: 7)
+                        Circle().fill(palette.agentBubbleText.opacity(0.6)).frame(width: 7, height: 7)
                             .opacity(0.3 + 0.7 * abs(sin(phase + Double(index) * 0.6)))
                     }
                 }
             }
             .padding(.horizontal, 14).padding(.vertical, 12)
-            .background(RoundedRectangle(cornerRadius: 18).fill(Color(.secondarySystemBackground)))
+            .background(RoundedRectangle(cornerRadius: 18).fill(palette.agentBubble))
             .accessibilityLabel(L.t("typing"))
         }
         .onAppear { withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) { phase = .pi } }

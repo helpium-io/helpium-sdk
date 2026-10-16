@@ -1,20 +1,30 @@
 import SwiftUI
 
 extension Color {
+    /// `#RGB`, `#RRGGBB` or `#RRGGBBAA`.
     init(hex: String) {
+        var raw = hex.trimmingCharacters(in: CharacterSet(charactersIn: "# "))
+        if raw.count == 3 { raw = raw.map { "\($0)\($0)" }.joined() }
         var value: UInt64 = 0
-        Scanner(string: hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))).scanHexInt64(&value)
+        Scanner(string: raw).scanHexInt64(&value)
+        let hasAlpha = raw.count == 8
+        let rgb = hasAlpha ? value >> 8 : value
         self.init(
-            red: Double((value >> 16) & 0xFF) / 255,
-            green: Double((value >> 8) & 0xFF) / 255,
-            blue: Double(value & 0xFF) / 255
+            .sRGB,
+            red: Double((rgb >> 16) & 0xFF) / 255,
+            green: Double((rgb >> 8) & 0xFF) / 255,
+            blue: Double(rgb & 0xFF) / 255,
+            opacity: hasAlpha ? Double(value & 0xFF) / 255 : 1
         )
     }
 
     /// White or black, whichever reads better on this color.
     static func contrasting(_ hex: String) -> Color {
+        var raw = hex.trimmingCharacters(in: CharacterSet(charactersIn: "# "))
+        if raw.count == 3 { raw = raw.map { "\($0)\($0)" }.joined() }
+        if raw.count == 8 { raw = String(raw.prefix(6)) }
         var value: UInt64 = 0
-        Scanner(string: hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))).scanHexInt64(&value)
+        Scanner(string: raw).scanHexInt64(&value)
         let r = Double((value >> 16) & 0xFF), g = Double((value >> 8) & 0xFF), b = Double(value & 0xFF)
         return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 ? .black : .white
     }
@@ -24,6 +34,7 @@ struct Avatar: View {
     let url: String?
     let fallback: String
     var size: CGFloat = 28
+    @Environment(\.palette) private var palette
 
     var body: some View {
         Group {
@@ -39,10 +50,10 @@ struct Avatar: View {
 
     private var initials: some View {
         ZStack {
-            Circle().fill(Color(.systemGray5))
+            Circle().fill(palette.surface)
             Text(String(fallback.prefix(1)).uppercased())
                 .font(.system(size: size * 0.45, weight: .semibold))
-                .foregroundColor(.secondary)
+                .foregroundColor(palette.textSecondary)
         }
     }
 }

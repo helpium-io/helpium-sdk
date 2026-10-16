@@ -8,6 +8,9 @@ import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import io.helpium.sdk.Helpium
+import io.helpium.sdk.HelpiumAppearance
+import io.helpium.sdk.HelpiumColorScheme
+import io.helpium.sdk.HelpiumColors
 
 /** React Native bridge over the Helpium Android SDK (compiled into this library). */
 class HelpiumModule(private val context: ReactApplicationContext) : ReactContextBaseJavaModule(context) {
@@ -26,6 +29,30 @@ class HelpiumModule(private val context: ReactApplicationContext) : ReactContext
             if (baseUrl != null) Helpium.configure(context, widgetKey, baseUrl) else Helpium.configure(context, widgetKey)
             Helpium.addUnreadCountListener(unreadListener)
         }
+    }
+
+    @ReactMethod
+    fun setAppearance(appearance: ReadableMap) = Helpium.setAppearance(appearance.toAppearance())
+
+    private fun ReadableMap.toAppearance(): HelpiumAppearance {
+        fun colors(key: String): HelpiumColors {
+            val map = if (hasKey(key) && !isNull(key)) getMap(key) else null
+            fun v(name: String): String? = if (map != null && map.hasKey(name) && !map.isNull(name)) map.getString(name) else null
+            return HelpiumColors()
+                .primary(v("primary")).onPrimary(v("onPrimary")).background(v("background")).surface(v("surface"))
+                .text(v("text")).textSecondary(v("textSecondary")).border(v("border"))
+                .headerBackground(v("headerBackground")).headerText(v("headerText"))
+                .customerBubble(v("customerBubble")).customerBubbleText(v("customerBubbleText"))
+                .agentBubble(v("agentBubble")).agentBubbleText(v("agentBubbleText"))
+                .inputBackground(v("inputBackground")).inputText(v("inputText")).link(v("link"))
+                .unreadBadge(v("unreadBadge")).unreadBadgeText(v("unreadBadgeText"))
+        }
+        val scheme = when (if (hasKey("colorScheme") && !isNull("colorScheme")) getString("colorScheme") else null) {
+            "light" -> HelpiumColorScheme.LIGHT
+            "dark" -> HelpiumColorScheme.DARK
+            else -> HelpiumColorScheme.SYSTEM
+        }
+        return HelpiumAppearance(colors("light"), colors("dark"), scheme)
     }
 
     @ReactMethod

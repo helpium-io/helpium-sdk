@@ -46,6 +46,28 @@ useEffect(() => {
 Helpium.logout();
 ```
 
+## Colors
+
+Every color of the chat is configurable, for light and dark mode. Leave any out to keep its default:
+
+```tsx
+Helpium.setAppearance({
+  light: { primary: '#0ea5e9', background: '#ffffff', headerBackground: '#0ea5e9', headerText: '#ffffff' },
+  dark: { primary: '#38bdf8', background: '#0f172a', surface: '#1e293b', text: '#f1f5f9' },
+  colorScheme: 'system', // or 'light' / 'dark'
+});
+```
+
+The colors you can set:
+- `primary`, `onPrimary`
+- `background`, `surface`, `text`, `textSecondary`, `border`
+- `headerBackground`, `headerText`
+- `customerBubble`, `customerBubbleText`, `agentBubble`, `agentBubbleText`
+- `inputBackground`, `inputText`, `link`
+- `unreadBadge`, `unreadBadgeText`
+
+The [full documentation](https://github.com/helpium-io/helpium-sdk#7-customization) describes each one.
+
 ## Push notifications
 
 Connect your Apple key and Firebase service account in Helpium (Channels → Live Chat → Mobile apps). Then pass the **raw** device token and handle taps:
@@ -66,7 +88,8 @@ Notifications.addNotificationResponseReceivedListener((response) => {
 
 | Method | Description |
 |---|---|
-| `configure({ widgetKey, baseUrl? })` | Starts the SDK |
+| `configure({ widgetKey, baseUrl?, appearance? })` | Starts the SDK |
+| `setAppearance({ light?, dark?, colorScheme? })` | Every color, for light and dark mode |
 | `identify({ userJwt, email?, name? })` | Verified user (token signed by your server) |
 | `identifyByEmail({ email, name? })` | Unverified user |
 | `logout()` | Forgets the user on this phone and stops their push |

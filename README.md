@@ -46,7 +46,8 @@ That's it. The widget key is in your Helpium dashboard under **Channels → Live
 
 ## Features
 
-- 💬 **Native UI.** SwiftUI on iOS and native views on Android, not a web view. It follows your brand color and light or dark mode.
+- 💬 **Native UI.** SwiftUI on iOS and native views on Android, not a web view.
+- 🎨 **Fully themeable.** Every color is configurable, separately for light and dark mode.
 - 🤖 **AI first.** Your bot answers instantly from your articles, procedures and AI actions. It hands over to a person when the customer asks or the AI is not sure.
 - ⚡ **Realtime.** Agent replies, typing indicators and read receipts arrive live.
 - 🔐 **Identity verification.** A token signed by your server makes the conversation follow the user across devices, and lets AI actions act on their account safely.
@@ -355,6 +356,7 @@ The phone registers once the user has a conversation and re-registers automatica
 | `unreadCount` · `addUnreadCountListener(_:)` | Unread agent and bot messages |
 | `setPushToken(_:)` | APNs device token (`Data` or hex `String`) |
 | `isHelpiumPush(_:)` · `shouldShowNotification(_:)` · `handlePush(_:)` | Push handling |
+| `setAppearance(_:)` | Every color, for light and dark mode ([Customization](#7-customization)) |
 | `setLocale(_:)` | `"en"`, `"es"`, or `nil` to follow the phone |
 | `setString(_:for:)` | Overrides one text ([Customization](#7-customization)) |
 
@@ -547,6 +549,7 @@ On Android 13+ request the `POST_NOTIFICATIONS` runtime permission, as for any n
 | `getUnreadCount()` · `addUnreadCountListener` · `removeUnreadCountListener` | Unread agent and bot messages |
 | `setPushToken(token)` | FCM registration token |
 | `isHelpiumPush(data \| extras)` · `shouldShowNotification(data)` · `handlePush(context, data \| extras)` | Push handling |
+| `setAppearance(appearance)` | Every color, for light and dark mode ([Customization](#7-customization)) |
 | `setLocale(code)` | `"en"`, `"es"`, or `null` to follow the phone. Call before `configure` |
 
 ---
@@ -651,7 +654,135 @@ Only **human agent** replies are pushed. Bot answers arrive while the customer i
 
 ## 7. Customization
 
-**Colors, bot name and avatar** come from your Live Chat settings, so you can change them without an app update.
+### Colors
+
+**Every color of the chat is configurable**, separately for light and dark mode, and you can force either mode. Any color you leave out keeps its default:
+- `primary` defaults to the brand color from your Live Chat settings, so you can change it without an app update.
+- The rest default to neutral light or dark tones.
+
+Colors are hex strings: `#RGB`, `#RRGGBB`, or `#RRGGBBAA` for transparency.
+
+| Color | Used for | Default |
+|---|---|---|
+| `primary` | Buttons, the send button, interactive options | Workspace brand color |
+| `onPrimary` | Text and icons on `primary` | Black or white, whichever reads better |
+| `background` | The screen behind everything | White / `#111827` |
+| `surface` | Cards, instant answers, avatars, image placeholders | `#F3F4F6` / `#1F2937` |
+| `text` | Main text | `#111827` / `#F9FAFB` |
+| `textSecondary` | Sender names, captions, system messages, placeholders | `#6B7280` / `#9CA3AF` |
+| `border` | Borders and dividers | `#E5E7EB` / `#374151` |
+| `headerBackground` | Top bar, and the status bar on Android | `background` |
+| `headerText` | Top bar title and icons | `text` |
+| `customerBubble` | The customer's messages | `primary` |
+| `customerBubbleText` | Text in the customer's messages | `onPrimary` |
+| `agentBubble` | Bot and agent messages, typing indicator | `surface` |
+| `agentBubbleText` | Text in bot and agent messages | `text` |
+| `inputBackground` | The message field and form fields | `surface` |
+| `inputText` | Text typed in fields | `text` |
+| `link` | Links inside bot and agent messages | `primary` |
+| `unreadBadge` | The unread count badge | `#EF4444` |
+| `unreadBadgeText` | The number on the badge | White |
+
+The status bar icons switch between light and dark automatically to stay readable on `headerBackground`.
+
+The colors apply right away, even while the chat is open. Set them at launch or whenever your app's theme changes.
+
+<details open>
+<summary><b>iOS</b></summary>
+
+```swift
+Helpium.setAppearance(HelpiumAppearance(
+    light: HelpiumColors(
+        primary: "#0ea5e9",
+        background: "#ffffff",
+        headerBackground: "#0ea5e9",
+        headerText: "#ffffff",
+        agentBubble: "#f1f5f9"
+    ),
+    dark: HelpiumColors(
+        primary: "#38bdf8",
+        background: "#0f172a",
+        surface: "#1e293b",
+        text: "#f1f5f9"
+    ),
+    colorScheme: .system   // .light or .dark to force one
+))
+
+// Same colors in both modes
+Helpium.setAppearance(HelpiumAppearance(colors: HelpiumColors(primary: "#0ea5e9"), colorScheme: .light))
+
+// Or at configure time
+Helpium.configure(widgetKey: "YOUR_WIDGET_KEY", appearance: myAppearance)
+```
+
+On iOS 15, the top bar keeps the system background and only its title and icons use `headerText`. iOS 16+ paints `headerBackground` too.
+</details>
+
+<details>
+<summary><b>Android (Java)</b></summary>
+
+```java
+Helpium.setAppearance(new HelpiumAppearance()
+        .light(new HelpiumColors()
+                .primary("#0ea5e9")
+                .background("#ffffff")
+                .headerBackground("#0ea5e9")
+                .headerText("#ffffff")
+                .agentBubble("#f1f5f9"))
+        .dark(new HelpiumColors()
+                .primary("#38bdf8")
+                .background("#0f172a")
+                .surface("#1e293b")
+                .text("#f1f5f9"))
+        .colorScheme(HelpiumColorScheme.SYSTEM));   // LIGHT or DARK to force one
+
+// Same colors in both modes
+Helpium.setAppearance(new HelpiumAppearance().colors(new HelpiumColors().primary("#0ea5e9")));
+```
+</details>
+
+<details>
+<summary><b>Android (Kotlin)</b></summary>
+
+```kotlin
+Helpium.setAppearance(HelpiumAppearance(
+    light = HelpiumColors().apply { primary = "#0ea5e9"; background = "#ffffff"; agentBubble = "#f1f5f9" },
+    dark = HelpiumColors().apply { primary = "#38bdf8"; background = "#0f172a"; surface = "#1e293b" },
+    colorScheme = HelpiumColorScheme.SYSTEM,
+))
+```
+</details>
+
+<details>
+<summary><b>React Native</b></summary>
+
+```tsx
+Helpium.setAppearance({
+  light: { primary: '#0ea5e9', background: '#ffffff', headerBackground: '#0ea5e9', headerText: '#ffffff', agentBubble: '#f1f5f9' },
+  dark: { primary: '#38bdf8', background: '#0f172a', surface: '#1e293b', text: '#f1f5f9' },
+  colorScheme: 'system', // 'light' or 'dark' to force one
+});
+
+// Or at configure time
+Helpium.configure({ widgetKey: 'YOUR_WIDGET_KEY', appearance: { light: { primary: '#0ea5e9' } } });
+```
+</details>
+
+**Coming from the web widget?** The `data-helpium-*` color attributes map one to one:
+
+| Web widget | SDK |
+|---|---|
+| `color` | `primary` |
+| `contrast` | `onPrimary` |
+| `bg` | `background` |
+| `bg-secondary` | `surface` |
+| `border` | `border` |
+| `text` | `text` |
+| `text-secondary` | `textSecondary` |
+
+**Bot name and avatar** come from your Live Chat settings.
+
+### Language and texts
 
 **Language.** The chat follows the phone language (English and Spanish included). To force one:
 
