@@ -144,6 +144,7 @@ struct ThreadView: View {
                         .buttonStyle(PillButtonStyle(palette: palette, filled: false))
                         .frame(maxWidth: .infinity)
                         .padding(.top, 14)
+                        .id("handoff")
                     }
 
                     if store.isBotTyping || store.isAgentTyping {
@@ -161,12 +162,21 @@ struct ThreadView: View {
             }
             .onChange(of: store.messages.count) { _ in scrollToBottom(proxy) }
             .onChange(of: store.isBotTyping) { _ in scrollToBottom(proxy) }
+            .onChange(of: store.showHandoffButton) { _ in scrollToBottom(proxy) }
             .onAppear { scrollToBottom(proxy, animated: false) }
         }
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool = true) {
-        let target: AnyHashable? = (store.isBotTyping || store.isAgentTyping) ? AnyHashable("typing") : lastMessageId.map(AnyHashable.init)
+        // The last thing in the list: the typing dots, the handoff button, or the last message.
+        let target: AnyHashable?
+        if store.isBotTyping || store.isAgentTyping {
+            target = AnyHashable("typing")
+        } else if store.showHandoffButton {
+            target = AnyHashable("handoff")
+        } else {
+            target = lastMessageId.map(AnyHashable.init)
+        }
         guard let target else { return }
         if animated {
             withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(target, anchor: .bottom) }
