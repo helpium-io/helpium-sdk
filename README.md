@@ -13,6 +13,8 @@ Your Helpium AI and your team, inside your app.
 [![React Native](https://img.shields.io/badge/React%20Native-0.71%2B-61DAFB?logo=react&logoColor=black)](#5-react-native)
 [![Swift Package Manager](https://img.shields.io/badge/SPM-compatible-F05138?logo=swift&logoColor=white)](#3-ios)
 [![JitPack](https://jitpack.io/v/helpium-io/helpium-sdk.svg)](https://jitpack.io/#helpium-io/helpium-sdk)
+[![npm](https://img.shields.io/npm/v/@helpium/react-native/beta?label=npm&color=cb3837&logo=npm)](https://www.npmjs.com/package/@helpium/react-native)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 [Website](https://helpium.io) · [Developers](https://helpium.io/developers) · [API contract](spec/API.md) · [Report an issue](https://github.com/helpium-io/helpium-sdk/issues)
 
@@ -798,6 +800,12 @@ When the Helpium customer API changes, update `spec/API.md` and `spec/fixtures` 
    - `react-native/package.json`
 2. Add the changes to [CHANGELOG.md](CHANGELOG.md).
 3. Tag and push: `git tag 0.2.0 && git push origin 0.2.0`. Swift Package Manager and JitPack pick up the tag.
+
+---
+
+## License
+
+[MIT](LICENSE) © Helpium
 
 ---
 

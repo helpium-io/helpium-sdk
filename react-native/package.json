@@ -1,19 +1,54 @@
 {
   "name": "@helpium/react-native",
-  "version": "0.1.0",
-  "description": "Native in-app support chat for React Native, powered by the Helpium iOS and Android SDKs.",
+  "version": "0.1.0-beta.1",
+  "description": "Native in-app support chat for React Native: your Helpium AI and team inside your app. Built on the Helpium iOS and Android SDKs.",
+  "keywords": [
+    "helpium",
+    "react-native",
+    "chat",
+    "support",
+    "customer-support",
+    "live-chat",
+    "in-app-chat",
+    "helpdesk",
+    "ai",
+    "sdk",
+    "ios",
+    "android",
+    "expo"
+  ],
+  "homepage": "https://github.com/helpium-io/helpium-sdk#5-react-native",
+  "bugs": {
+    "url": "https://github.com/helpium-io/helpium-sdk/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/helpium-io/helpium-sdk.git",
+    "directory": "react-native"
+  },
+  "license": "MIT",
+  "author": "Helpium",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "react-native": "src/index.ts",
-  "license": "MIT",
-  "author": "Helpium",
-  "homepage": "https://helpium.io/developers",
-  "files": ["src", "ios", "android", "helpium-react-native.podspec", "react-native.config.js", "!android/build"],
+  "files": [
+    "src",
+    "ios",
+    "android",
+    "helpium-react-native.podspec",
+    "react-native.config.js",
+    "!android/build",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "sync-native": "node scripts/sync-native.mjs",
     "prepare": "node scripts/sync-native.mjs"
   },
   "peerDependencies": {
     "react-native": ">=0.71"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
