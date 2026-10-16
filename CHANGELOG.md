@@ -2,6 +2,11 @@
 
 All notable changes to the Helpium mobile SDKs. Versions follow [Semantic Versioning](https://semver.org).
 
+## @helpium/react-native 0.1.0-beta.2 - 2026-10-16
+
+### Changed
+- A complete README for npm: requirements, Expo setup, identity, push, colors, texts, API reference and troubleshooting, with screenshots.
+
 ## 0.1.0 - 2026-10-16
 
 First release.
